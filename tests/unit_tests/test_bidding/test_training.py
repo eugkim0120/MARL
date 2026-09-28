@@ -2,6 +2,9 @@
 Unit tests for training module.
 """
 
+import multiprocessing
+import subprocess
+import sys
 import numpy as np
 import torch
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -56,6 +59,34 @@ def get_weights(agent):
     }
 
 
+PARALLEL_TRAIN_TIMEOUT_S = 180
+
+PARALLEL_TRAIN_SCRIPT = """
+import sys
+from easy_marl.examples.bidding.training import parallel_train
+
+if __name__ == "__main__":
+    parallel_train(
+        N={n}, num_rounds=1, timesteps_per_agent={timesteps}, n_workers={n},
+        update_probability=1.0, save_dir=sys.argv[1], verbose=False,
+    )
+"""
+
+
+class TestParallelTrainDoesNotDeadlock:
+    """parallel_train runs torch in the parent before starting its workers."""
+
+    def test_that_parallel_train_completes_instead_of_deadlocking(self, tmp_path):
+        """A fresh interpreter is used so a fork-after-torch hang fails as a timeout."""
+        script = PARALLEL_TRAIN_SCRIPT.format(n=N_AGENTS, timesteps=TIMESTEPS)
+        subprocess.run(
+            [sys.executable, "-c", script, str(tmp_path)],
+            timeout=PARALLEL_TRAIN_TIMEOUT_S,
+            check=True,
+        )
+        assert (tmp_path / "training_summary.json").exists()
+
+
 class TestTrainingEquivalence:
     """Tests that sequential and parallel training produce equivalent results."""
 
@@ -89,7 +120,10 @@ class TestTrainingEquivalence:
         snapshots_par = [a.save_to_bytes() for a in agents_par]
         trained_par = {}
 
-        with ProcessPoolExecutor(max_workers=N_AGENTS) as executor:
+        spawn_context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=N_AGENTS, mp_context=spawn_context
+        ) as executor:
             futures = [
                 executor.submit(
                     train_single_agent_worker,

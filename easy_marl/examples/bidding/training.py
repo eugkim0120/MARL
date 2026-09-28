@@ -53,6 +53,7 @@ To ensure consistent results between sequential and parallel training modes:
 3. Agents are serialized/deserialized using full state preservation (including optimizer).
 """
 
+import multiprocessing
 import os
 import random
 import numpy as np
@@ -752,7 +753,9 @@ def parallel_train(
     all_results = []
 
     # Submit all training jobs for this round
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    # "fork" deadlocks: torch has already started its thread pool in this process.
+    spawn_context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=n_workers, mp_context=spawn_context) as executor:
         for round_idx in range(num_rounds):
             if verbose:
                 print(f"\n{'=' * 60}")
