@@ -171,7 +171,7 @@ def make_bess_params(
     power_mw: float = 25.0,
     duration_h: float = 4.0,
     efficiency_rt: float = 0.9,
-    initial_soc_frac: float = 0.5,
+    initial_soc_frac: float = 0.0,
     bid_ref: float = 30.0,
 ) -> Dict:
     """
@@ -179,6 +179,7 @@ def make_bess_params(
 
     Generators and demand are identical to ``make_default_params(N - 1)`` so a
     battery run can be compared directly against the no-battery baseline.
+    The battery starts empty by default so every MWh it sells was bought first.
     """
     params = make_default_params(N=N - 1, T=T)
     params["bess"] = {
@@ -667,6 +668,9 @@ def train_single_agent_worker(
     Returns:
         Tuple of (agent_index, trained_agent_state, eval_metrics)
     """
+    # Workers run side by side; torch's default of one thread per core oversubscribes the CPU.
+    torch.set_num_threads(1)
+
     # Deserialize agents
     agents = []
     for i, state in enumerate(agents_states):

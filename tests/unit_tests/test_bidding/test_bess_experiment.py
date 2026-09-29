@@ -66,6 +66,17 @@ class TestMakeBessParams:
         assert params["bess"]["power_mw"] == POWER
         assert params["bess"]["duration_h"] == DURATION
 
+    def test_that_default_battery_starts_empty_so_it_cannot_sell_free_energy(self):
+        params = make_bess_params(N=4, T=24, power_mw=POWER, duration_h=DURATION)
+        assert params["bess"]["initial_soc_frac"] == 0.0
+
+        metrics = evaluate_market_metrics(
+            fixed_agents([1.0, -10.0]), {**PARAMS, "bess": params["bess"]},
+            num_episodes=1, seed=None,
+        )
+        assert metrics["bess_discharge_mwh_mean"] == 0.0
+        assert metrics["bess_profit_mean"] == 0.0
+
 
 class TestEvaluateWithBattery:
     def test_that_battery_profit_is_price_times_net_energy_sold(self):
@@ -130,3 +141,22 @@ class TestSweep:
 
         monkeypatch.setattr(bess_experiment, "parallel_train", fail_if_called)
         run_sweep(configs, bess_experiment.PRESETS["smoke"], tmp_path)
+
+    @pytest.mark.parametrize("preset_name", sorted(bess_experiment.PRESETS))
+    def test_that_every_agent_trains_every_round(self, preset_name, tmp_path, monkeypatch):
+        preset = bess_experiment.PRESETS[preset_name]
+        assert preset["update_probability"] == 1.0
+
+        captured = {}
+
+        class StopAfterCapture(Exception):
+            pass
+
+        def capture(**kwargs):
+            captured.update(kwargs)
+            raise StopAfterCapture
+
+        monkeypatch.setattr(bess_experiment, "parallel_train", capture)
+        with pytest.raises(StopAfterCapture):
+            bess_experiment.run_config(SweepConfig(10, 1, 42), preset, tmp_path)
+        assert captured["update_probability"] == 1.0

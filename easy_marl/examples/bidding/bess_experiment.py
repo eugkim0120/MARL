@@ -38,6 +38,7 @@ PRESETS = {
         "num_rounds": 2,
         "timesteps_per_agent": 1_000,
         "eval_episodes": 20,
+        "update_probability": 1.0,
     },
     "full": {
         "powers": [5, 10, 25, 50, 75],
@@ -46,6 +47,7 @@ PRESETS = {
         "num_rounds": 5,
         "timesteps_per_agent": 5_000,
         "eval_episodes": 20,
+        "update_probability": 1.0,
     },
 }
 
@@ -192,6 +194,7 @@ def run_config(config: SweepConfig, preset: Dict, out_dir: Path) -> Dict:
         save_dir=str(config_dir / "training"),
         verbose=False,
         param_func=config.param_func(),
+        update_probability=preset["update_probability"],
     )
     params = config.param_func()(N=config.n_agents, T=24)
     metrics = evaluate_market_metrics(
