@@ -1,5 +1,9 @@
 import numpy as np
-from easy_marl.examples.bidding.market import market_clearing, sigmoid
+from easy_marl.examples.bidding.market import (
+    clear_with_storage,
+    market_clearing,
+    sigmoid,
+)
 
 
 class TestMarketClearing:
@@ -87,6 +91,50 @@ class TestMarketClearing:
         # idx 1 (10$): 100
         # idx 2 (20$): 50
         np.testing.assert_allclose(dispatched, [0.0, 100.0, 50.0])
+
+
+class TestClearWithStorage:
+    """Tests for clearing with a single price-sensitive storage buyer."""
+
+    BIDS = np.array([10.0, 20.0, 30.0])
+    QUANTITIES = np.array([50.0, 50.0, 50.0])
+
+    def test_that_zero_buy_quantity_matches_market_clearing(self):
+        price, dispatched, charged = clear_with_storage(
+            self.BIDS, self.QUANTITIES, 70.0, 25.0, 0.0
+        )
+        expected_price, expected_dispatch = market_clearing(
+            self.BIDS, self.QUANTITIES, 70.0
+        )
+        assert price == expected_price
+        np.testing.assert_allclose(dispatched, expected_dispatch)
+        assert charged == 0.0
+
+    def test_that_storage_charges_fully_when_supply_below_its_bid_is_ample(self):
+        # Supply offered at <= 25 is 100; demand 40 leaves 60 of headroom.
+        price, dispatched, charged = clear_with_storage(
+            self.BIDS, self.QUANTITIES, 40.0, 25.0, 20.0
+        )
+        assert charged == 20.0
+        assert price == 20.0
+        np.testing.assert_allclose(dispatched, [50.0, 10.0, 0.0])
+
+    def test_that_partial_charge_keeps_price_at_or_below_bid(self):
+        # Supply offered at <= 25 is 100; demand 90 leaves only 10 for the battery.
+        price, dispatched, charged = clear_with_storage(
+            self.BIDS, self.QUANTITIES, 90.0, 25.0, 30.0
+        )
+        assert charged == 10.0
+        assert price <= 25.0
+        np.testing.assert_allclose(dispatched.sum(), 100.0)
+
+    def test_that_storage_does_not_charge_when_bid_is_below_all_offers(self):
+        price, dispatched, charged = clear_with_storage(
+            self.BIDS, self.QUANTITIES, 40.0, 5.0, 30.0
+        )
+        assert charged == 0.0
+        assert price == 10.0
+        np.testing.assert_allclose(dispatched, [40.0, 0.0, 0.0])
 
 
 class TestSigmoid:

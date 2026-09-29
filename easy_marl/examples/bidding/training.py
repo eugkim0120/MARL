@@ -165,6 +165,32 @@ def make_default_params(N: int = 5, T: int = 24) -> Dict:
     return params
 
 
+def make_bess_params(
+    N: int = 4,
+    T: int = 24,
+    power_mw: float = 25.0,
+    duration_h: float = 4.0,
+    efficiency_rt: float = 0.9,
+    initial_soc_frac: float = 0.5,
+    bid_ref: float = 30.0,
+) -> Dict:
+    """
+    Default market with N - 1 generators plus one battery as the last agent.
+
+    Generators and demand are identical to ``make_default_params(N - 1)`` so a
+    battery run can be compared directly against the no-battery baseline.
+    """
+    params = make_default_params(N=N - 1, T=T)
+    params["bess"] = {
+        "power_mw": power_mw,
+        "duration_h": duration_h,
+        "efficiency_rt": efficiency_rt,
+        "initial_soc_frac": initial_soc_frac,
+        "bid_ref": bid_ref,
+    }
+    return params
+
+
 def make_env_for_agent(
     agent_index: int,
     agents: List[BaseAgent],
@@ -300,10 +326,16 @@ def evaluate_agents(
 
         for i in range(N):
             total_reward = np.sum(output["rewards"][:, i])
-            total_profit = np.sum(
-                (output["market_prices"] - params["costs"][i])
-                * output["q_cleared"][:, i]
-            )
+            if eval_env.has_bess and i == eval_env.bess_index:
+                total_profit = np.sum(
+                    output["market_prices"]
+                    * (output["bess_discharge"] - output["bess_charge"])
+                )
+            else:
+                total_profit = np.sum(
+                    (output["market_prices"] - params["costs"][i])
+                    * output["q_cleared"][:, i]
+                )
             total_quantity = np.sum(output["q_cleared"][:, i])
 
             episode_rewards[ep, i] = total_reward

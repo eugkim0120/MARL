@@ -5,7 +5,7 @@ from gymnasium import spaces
 import numpy as np
 from typing import Callable, Dict, Optional, Tuple
 
-from easy_marl.examples.bidding.market import market_clearing
+from easy_marl.examples.bidding.market import clear_with_storage, market_clearing
 from easy_marl.src.observators import OBSERVERS
 
 # penalty per unit of unmet demand, this acts as a system stabilizer
@@ -37,7 +37,7 @@ class MARLElectricityMarketEnv(gym.Env):
         # Parameters
         params = params or {}
         self.agent_index = agent_index
-        self.N = params["N_generators"]
+        self.N_generators = params["N_generators"]
         self.T = params["T"]
         self.max_bid_delta = params.get("max_bid_delta", 50.0)
         self.lambda_bid_penalty = params.get("lambda_bid_penalty", 0.01)
@@ -60,21 +60,45 @@ class MARLElectricityMarketEnv(gym.Env):
         self.capacity_scale = np.max(self.K) if np.max(self.K) > 0 else 1.0
         self.system_capacity = np.sum(self.K)
 
+        # Optional battery: always the last agent, after the generators.
+        # Scales above use generators only so generator observations do not depend on it.
+        bess = params.get("bess")
+        self.has_bess = bess is not None
+        self.N = self.N_generators + int(self.has_bess)
+        self.bess_index = self.N_generators if self.has_bess else None
+        if self.has_bess:
+            self.bess_power = float(bess["power_mw"])
+            self.bess_energy = self.bess_power * float(bess["duration_h"])
+            self.bess_leg_efficiency = float(np.sqrt(bess["efficiency_rt"]))
+            self.bess_initial_soc = float(bess["initial_soc_frac"]) * self.bess_energy
+            self.bess_bid_ref = float(bess["bid_ref"])
+            self.K_all = np.append(self.K, self.bess_power).astype(np.float32)
+            self.c_all = np.append(self.c, self.bess_bid_ref).astype(np.float32)
+        else:
+            self.K_all = self.K
+            self.c_all = self.c
+
         # Observer setup
         obs_dim_fn, obs_fn = OBSERVERS[observer_name]
-        self.obs_dim = obs_dim_fn(self.N)
+        self.obs_dim = obs_dim_fn(self.N_generators)
         self._obs_fn = obs_fn  # bind directly (no dict lookup later)
-        self.other_mask = np.arange(self.N) != self.agent_index
+        self.other_mask = np.arange(self.N_generators) != self.agent_index
         self.obs_buf = np.empty(self.obs_dim, dtype=np.float32)
+        if self.has_bess:
+            # Battery sees the market features plus its state of charge.
+            self.bess_obs_buf = np.empty(obs_dim_fn(self.N) + 1, dtype=np.float32)
 
+        is_bess_agent = self.has_bess and self.agent_index == self.bess_index
+        own_obs_dim = len(self.bess_obs_buf) if is_bess_agent else self.obs_dim
         self.observation_space = spaces.Box(
-            low=0, high=np.inf, shape=(self.obs_dim,), dtype=np.float32
+            low=0, high=np.inf, shape=(own_obs_dim,), dtype=np.float32
         )
 
-        # Action space
+        # Action space; the battery's first component is signed (<0 charge, >0 discharge)
         reasonable_bound = 10
+        quantity_low = -1.0 if is_bess_agent else 0.0
         self.action_space = spaces.Box(
-            low=np.array([0.0, -reasonable_bound], dtype=np.float32),
+            low=np.array([quantity_low, -reasonable_bound], dtype=np.float32),
             high=np.array([1.0, reasonable_bound], dtype=np.float32),
         )
 
@@ -126,7 +150,15 @@ class MARLElectricityMarketEnv(gym.Env):
             "market_prices": np.zeros(self.T, dtype=np.float32),
             "rewards": np.zeros((self.T, self.N), dtype=np.float32),
             "penalty": np.zeros((self.T, self.N), dtype=np.float32),
+            "demand": np.zeros(self.T, dtype=np.float32),
         }
+        if self.has_bess:
+            self.output["bess_charge"] = np.zeros(self.T, dtype=np.float32)
+            self.output["bess_discharge"] = np.zeros(self.T, dtype=np.float32)
+            self.output["soc"] = np.zeros(self.T, dtype=np.float32)
+            self.soc = self.bess_initial_soc
+            self.bess_buy_bid = 0.0
+            self.bess_buy_quantity = 0.0
 
         self.b_all = np.zeros(self.N, dtype=np.float32)
         self.q_all = np.zeros(self.N, dtype=np.float32)
@@ -139,6 +171,22 @@ class MARLElectricityMarketEnv(gym.Env):
         if agent_index is None:
             agent_index = self.agent_index
 
+        if self.has_bess and agent_index == self.bess_index:
+            self._obs_fn(
+                self.D_profile,
+                self.K_all,
+                self.c_all,
+                agent_index,
+                self.demand_scale,
+                self.capacity_scale,
+                self.cost_scale,
+                np.arange(self.N) != agent_index,
+                self.bess_obs_buf[:-1],
+                self.t,
+            )
+            self.bess_obs_buf[-1] = self.soc / self.bess_energy
+            return self.bess_obs_buf
+
         obs = self._obs_fn(
             self.D_profile,
             self.K,
@@ -147,7 +195,7 @@ class MARLElectricityMarketEnv(gym.Env):
             self.demand_scale,
             self.capacity_scale,
             self.cost_scale,
-            np.arange(self.N) != agent_index,
+            np.arange(self.N_generators) != agent_index,
             self.obs_buf,
             self.t,
         )
@@ -156,11 +204,55 @@ class MARLElectricityMarketEnv(gym.Env):
     def update_agent_bid(self, action: np.ndarray, agent_idx: int) -> None:
         """Project an agent's action into quantity and price bids."""
 
+        if self.has_bess and agent_idx == self.bess_index:
+            self._update_bess_bid(action)
+            return
+
         q_t = float(1 - action[0]) * self.K[agent_idx]
         b_t = float(self.c[agent_idx]) + float(np.tanh(action[1])) * self.max_bid_delta
 
         self.q_all[agent_idx] = q_t
         self.b_all[agent_idx] = b_t
+
+    def _update_bess_bid(self, action: np.ndarray) -> None:
+        """Turn the battery action into either a sell offer or a buy bid."""
+
+        power_frac = float(np.clip(action[0], -1.0, 1.0))
+        price = self.bess_bid_ref + float(np.tanh(action[1])) * self.max_bid_delta
+        self.b_all[self.bess_index] = price
+        if power_frac >= 0:
+            deliverable = self.soc * self.bess_leg_efficiency
+            self.q_all[self.bess_index] = min(power_frac * self.bess_power, deliverable)
+            self.bess_buy_quantity = 0.0
+        else:
+            headroom = (self.bess_energy - self.soc) / self.bess_leg_efficiency
+            self.q_all[self.bess_index] = 0.0
+            self.bess_buy_quantity = min(-power_frac * self.bess_power, headroom)
+        self.bess_buy_bid = price
+
+    def _clear_market(self, demand: float) -> Tuple[float, np.ndarray, float]:
+        """Clear the market; returns price, sell dispatch per agent, battery charge."""
+
+        if not self.has_bess:
+            P_t, q_cleared = market_clearing(self.b_all, self.q_all, demand)
+            return P_t, q_cleared, 0.0
+
+        if self.q_all[self.bess_index] > 0:
+            P_t, q_cleared = market_clearing(self.b_all, self.q_all, demand)
+            return P_t, q_cleared, 0.0
+
+        # A battery that offers nothing must not set the price, so it is left out as a seller.
+        gens = slice(0, self.N_generators)
+        P_t, q_generators, charged = clear_with_storage(
+            self.b_all[gens],
+            self.q_all[gens],
+            demand,
+            self.bess_buy_bid,
+            self.bess_buy_quantity,
+        )
+        q_cleared = np.zeros(self.N, dtype=q_generators.dtype)
+        q_cleared[gens] = q_generators
+        return P_t, q_cleared, float(charged)
 
     def update_all_bids(self, exclude_agent_index: bool = True) -> None:
         """Populate bids for every agent using their fixed policies when available."""
@@ -201,20 +293,43 @@ class MARLElectricityMarketEnv(gym.Env):
             self.update_agent_bid(action, self.agent_index)
 
         # Run market clearing
-        P_t, q_cleared = market_clearing(self.b_all, self.q_all, self.D_profile[self.t])
+        demand = self.D_profile[self.t]
+        P_t, q_cleared, charged = self._clear_market(demand)
 
         # Rewards
-        base_rewards = (P_t - self.c) * q_cleared
+        base_rewards = (P_t - self.c_all) * q_cleared
 
         # Bid regulariser
-        bid_penalties = self.lambda_bid_penalty * (self.b_all - self.c) ** 2
+        bid_penalties = self.lambda_bid_penalty * (self.b_all - self.c_all) ** 2
 
-        # Penalty for loss of load
-        demand = self.D_profile[self.t]
-        total_cleared = np.sum(q_cleared)
+        # Penalty for loss of load (energy bought by the battery is not served load)
+        total_cleared = np.sum(q_cleared) - charged
         loss_of_load_penalty = UNIT_LOL_PENALTY * max(0, demand - total_cleared)
 
         r = base_rewards - bid_penalties - loss_of_load_penalty
+
+        if self.has_bess:
+            discharged = float(q_cleared[self.bess_index])
+            self.soc += (
+                charged * self.bess_leg_efficiency
+                - discharged / self.bess_leg_efficiency
+            )
+            self.soc = min(max(self.soc, 0.0), self.bess_energy)
+            r[self.bess_index] = (
+                P_t * (discharged - charged)
+                - bid_penalties[self.bess_index]
+                - loss_of_load_penalty
+            )
+            # Stops the battery from selling its starting energy for free.
+            if self.t == self.T - 1:
+                terminal_penalty = max(0.0, self.bess_initial_soc - self.soc) * (
+                    self.bess_bid_ref + self.max_bid_delta
+                )
+                r[self.bess_index] -= terminal_penalty
+                self.output["penalty"][self.t, self.bess_index] = terminal_penalty
+            self.output["bess_charge"][self.t] = charged
+            self.output["bess_discharge"][self.t] = discharged
+            self.output["soc"][self.t] = self.soc
 
         # Scale reward
         r /= self.demand_scale * self.cost_scale * max(1, self.T)
@@ -227,6 +342,7 @@ class MARLElectricityMarketEnv(gym.Env):
         self.output["q_cleared"][t_idx] = q_cleared
         self.output["market_prices"][t_idx] = P_t
         self.output["rewards"][t_idx] = r
+        self.output["demand"][t_idx] = demand
 
         # Step time
         self.t += 1
@@ -255,8 +371,8 @@ class MARLElectricityMarketEnv(gym.Env):
     def get_metadata(self) -> Dict[str, float]:
         """Return a JSON-serializable dictionary describing the environment."""
 
-        return {
-            "N_generators": self.N,
+        metadata = {
+            "N_generators": self.N_generators,
             "T": self.T,
             "capacities": self.K.tolist(),
             "costs": self.c.tolist(),
@@ -264,3 +380,12 @@ class MARLElectricityMarketEnv(gym.Env):
             "max_bid_delta": self.max_bid_delta,
             "lambda_bid_penalty": self.lambda_bid_penalty,
         }
+        if self.has_bess:
+            metadata["bess"] = {
+                "power_mw": self.bess_power,
+                "energy_mwh": self.bess_energy,
+                "leg_efficiency": self.bess_leg_efficiency,
+                "initial_soc": self.bess_initial_soc,
+                "bid_ref": self.bess_bid_ref,
+            }
+        return metadata

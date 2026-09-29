@@ -139,3 +139,116 @@ class TestMARLEnv:
         assert np.allclose(
             q_cleared, PARAMS["capacities"], atol=1e-5
         )  # Should run full out
+
+
+# --- Storage (BESS) ---
+BESS_POWER = 20.0
+BESS_DURATION = 2.0
+BESS_EFFICIENCY = 0.81  # sqrt = 0.9 per leg
+BESS_PARAMS = {
+    **PARAMS,
+    # Below 100 so a discharge offer at ~20 is inside the merit order.
+    "demand_profile": [60.0] * 5,
+    "bess": {
+        "power_mw": BESS_POWER,
+        "duration_h": BESS_DURATION,
+        "efficiency_rt": BESS_EFFICIENCY,
+        "initial_soc_frac": 0.5,
+        "bid_ref": 25.0,
+    },
+}
+BESS_INDEX = PARAMS["N_generators"]
+GENERATOR_NULL = np.array([0.0, 0.0])
+IDLE = np.array([0.0, 0.0])
+FULL_CHARGE = np.array([-1.0, 10.0])  # buy at up to bid_ref + max_bid_delta
+FULL_DISCHARGE = np.array([1.0, -10.0])  # offer at bid_ref - max_bid_delta = 15
+
+
+def make_bess_env(bess_action, agent_index=0, params=BESS_PARAMS):
+    agents = [MockAgent(GENERATOR_NULL) for _ in range(3)] + [MockAgent(bess_action)]
+    return MARLElectricityMarketEnv(agents=agents, params=params, agent_index=agent_index)
+
+
+def run_fixed_episode(env):
+    env.reset()
+    done = False
+    while not done:
+        _, _, terminated, truncated, _ = env.step(None, fixed_evaluation=True)
+        done = terminated or truncated
+    return env.output
+
+
+class TestMARLEnvWithStorage:
+    """Tests for the optional battery (BESS) agent."""
+
+    def test_that_idle_battery_leaves_generator_outcomes_unchanged(self):
+        plain_params = {k: v for k, v in BESS_PARAMS.items() if k != "bess"}
+        without = run_fixed_episode(
+            MARLElectricityMarketEnv(
+                agents=[MockAgent(GENERATOR_NULL) for _ in range(3)], params=plain_params
+            )
+        )
+        with_idle = run_fixed_episode(make_bess_env(IDLE))
+
+        np.testing.assert_allclose(with_idle["market_prices"], without["market_prices"])
+        np.testing.assert_allclose(with_idle["q_cleared"][:, :3], without["q_cleared"])
+        assert np.all(with_idle["q_cleared"][:, BESS_INDEX] == 0)
+        assert np.all(with_idle["bess_charge"] == 0)
+
+    def test_that_generator_observations_do_not_depend_on_battery(self):
+        plain = MARLElectricityMarketEnv(
+            agents=[MockAgent(GENERATOR_NULL) for _ in range(3)],
+            params={k: v for k, v in BESS_PARAMS.items() if k != "bess"},
+            observer_name="simple_v3",
+        )
+        with_bess = MARLElectricityMarketEnv(
+            agents=[MockAgent(GENERATOR_NULL) for _ in range(3)] + [MockAgent(IDLE)],
+            params=BESS_PARAMS,
+            observer_name="simple_v3",
+        )
+        for j in range(3):
+            np.testing.assert_allclose(
+                with_bess._get_obs(j).copy(), plain._get_obs(j).copy()
+            )
+
+    def test_that_battery_agent_has_signed_action_space_and_soc_observation(self):
+        env = make_bess_env(IDLE, agent_index=BESS_INDEX)
+        assert env.action_space.low[0] == -1.0
+        obs, _ = env.reset()
+        assert obs.shape == env.observation_space.shape
+        assert obs[-1] == 0.5
+
+    def test_that_charging_respects_power_energy_and_efficiency(self):
+        energy = BESS_POWER * BESS_DURATION
+        leg = np.sqrt(BESS_EFFICIENCY)
+        output = run_fixed_episode(make_bess_env(FULL_CHARGE))
+
+        assert np.all(output["bess_charge"] <= BESS_POWER + 1e-6)
+        assert np.all(output["soc"] <= energy + 1e-6)
+        # First hour: full power, stored energy is scaled by one efficiency leg.
+        assert output["bess_charge"][0] == BESS_POWER
+        np.testing.assert_allclose(output["soc"][0], 0.5 * energy + BESS_POWER * leg, rtol=1e-5)
+        # Battery fills and stops charging.
+        np.testing.assert_allclose(output["soc"][-1], energy, rtol=1e-5)
+        assert output["bess_charge"][-1] == 0.0
+
+    def test_that_discharging_sells_energy_and_drains_soc_through_efficiency(self):
+        energy = BESS_POWER * BESS_DURATION
+        leg = np.sqrt(BESS_EFFICIENCY)
+        output = run_fixed_episode(make_bess_env(FULL_DISCHARGE))
+
+        sold = output["bess_discharge"][0]
+        assert sold == output["q_cleared"][0, BESS_INDEX]
+        assert sold > 0
+        np.testing.assert_allclose(output["soc"][0], 0.5 * energy - sold / leg, rtol=1e-5)
+        assert np.all(output["soc"] >= -1e-6)
+
+    def test_that_ending_below_initial_soc_is_penalised_at_the_last_step(self):
+        output = run_fixed_episode(make_bess_env(FULL_DISCHARGE))
+        params = BESS_PARAMS["bess"]
+        soc0 = params["initial_soc_frac"] * BESS_POWER * BESS_DURATION
+        expected = (soc0 - output["soc"][-1]) * (params["bid_ref"] + PARAMS["max_bid_delta"])
+
+        assert expected > 0
+        np.testing.assert_allclose(output["penalty"][-1, BESS_INDEX], expected, rtol=1e-5)
+        assert np.all(output["penalty"][:-1, BESS_INDEX] == 0)
