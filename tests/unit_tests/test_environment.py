@@ -252,3 +252,112 @@ class TestMARLEnvWithStorage:
         assert expected > 0
         np.testing.assert_allclose(output["penalty"][-1, BESS_INDEX], expected, rtol=1e-5)
         assert np.all(output["penalty"][:-1, BESS_INDEX] == 0)
+
+
+# --- Day-ahead mode: each agent commits to all T hours in a single step ---
+DAY_PARAMS = {**PARAMS, "demand_profile": [60.0] * 5, "day_ahead": True}
+DAY_BESS_PARAMS = {**BESS_PARAMS, "day_ahead": True}
+T_DAY = PARAMS["T"]
+
+
+def day_action(quantity_params, price_params):
+    return np.concatenate([quantity_params, price_params]).astype(np.float32)
+
+
+def make_day_env(agent_action=None, agent_index=0, params=DAY_PARAMS, n_generators=3):
+    agents = [MockAgent(GENERATOR_NULL) for _ in range(n_generators)]
+    if "bess" in params:
+        agents.append(MockAgent(agent_action if agent_action is not None else IDLE))
+    return MARLElectricityMarketEnv(agents=agents, params=params, agent_index=agent_index)
+
+
+class TestMARLEnvDayAhead:
+    def test_that_one_step_plays_the_whole_day_and_terminates(self):
+        env = make_day_env()
+        env.reset()
+        action = day_action(np.zeros(T_DAY), np.zeros(T_DAY))
+
+        obs, reward, terminated, truncated, _ = env.step(action)
+
+        assert terminated and not truncated
+        assert env.t == T_DAY
+        assert np.all(env.output["demand"] == 60.0)
+        assert np.all(env.output["market_prices"] > 0)
+
+    def test_that_spaces_cover_the_full_day(self):
+        env = make_day_env()
+        obs, _ = env.reset()
+
+        assert env.action_space.shape == (2 * T_DAY,)
+        assert obs.shape == env.observation_space.shape
+        # The agent sees the whole demand profile, scaled by the peak.
+        np.testing.assert_allclose(obs[:T_DAY], 1.0)
+
+    def test_that_null_actions_match_the_hourly_environment(self):
+        hourly_params = {k: v for k, v in DAY_PARAMS.items() if k != "day_ahead"}
+        agents = [MockAgent(GENERATOR_NULL) for _ in range(3)]
+        hourly = run_fixed_episode(MARLElectricityMarketEnv(agents=agents, params=hourly_params))
+
+        day_env = MARLElectricityMarketEnv(agents=agents, params=DAY_PARAMS)
+        day_env.reset()
+        day_env.step(None, fixed_evaluation=True)
+
+        np.testing.assert_allclose(day_env.output["market_prices"], hourly["market_prices"])
+        np.testing.assert_allclose(day_env.output["q_cleared"], hourly["q_cleared"])
+        np.testing.assert_allclose(day_env.output["rewards"], hourly["rewards"], rtol=1e-6)
+
+    def test_that_each_hour_uses_its_own_entry_of_the_action(self):
+        env = make_day_env()
+        env.reset()
+        quantity_params = np.zeros(T_DAY)
+        quantity_params[2] = 1.0  # withhold everything in hour 2 only
+        env.step(day_action(quantity_params, np.zeros(T_DAY)))
+
+        offered = env.output["q_offered"][:, 0]
+        assert offered[2] == 0.0
+        assert np.all(np.delete(offered, 2) == PARAMS["capacities"][0])
+
+    def test_that_the_step_reward_is_the_sum_of_the_hourly_rewards(self):
+        env = make_day_env()
+        env.reset()
+        _, reward, _, _, _ = env.step(day_action(np.zeros(T_DAY), np.zeros(T_DAY)))
+
+        assert reward > 0
+        assert reward == np.float32(env.output["rewards"][:, 0].sum())
+
+    def test_that_a_wrong_sized_fixed_policy_action_is_rejected(self):
+        agents = [MockAgent(np.zeros(3)) for _ in range(3)]
+        env = MARLElectricityMarketEnv(agents=agents, params=DAY_PARAMS)
+        env.reset()
+        try:
+            env.step(None, fixed_evaluation=True)
+        except ValueError as error:
+            assert "size 3" in str(error)
+        else:
+            raise AssertionError("expected ValueError for a 3-element action")
+
+    def test_that_a_battery_schedule_charges_then_discharges_within_its_limits(self):
+        energy = BESS_POWER * BESS_DURATION
+        leg = np.sqrt(BESS_EFFICIENCY)
+        env = make_day_env(agent_index=BESS_INDEX, params=DAY_BESS_PARAMS)
+        env.reset()
+        power = np.zeros(T_DAY)
+        power[0], power[2] = -1.0, 1.0  # charge in hour 0, discharge in hour 2
+        price = np.zeros(T_DAY)
+        price[0], price[2] = 10.0, -10.0  # buy high, offer low so both clear
+        env.step(day_action(power, price))
+
+        out = env.output
+        assert out["bess_charge"][0] == BESS_POWER
+        np.testing.assert_allclose(out["soc"][0], 0.5 * energy + BESS_POWER * leg, rtol=1e-5)
+        assert out["bess_discharge"][2] > 0
+        assert out["bess_charge"][1] == 0 and out["bess_discharge"][1] == 0
+        assert np.all(out["soc"] >= -1e-6) and np.all(out["soc"] <= energy + 1e-6)
+
+    def test_that_battery_observation_shows_demand_and_its_own_size(self):
+        env = make_day_env(agent_index=BESS_INDEX, params=DAY_BESS_PARAMS)
+        obs, _ = env.reset()
+
+        assert obs.shape == env.observation_space.shape
+        assert env.action_space.low[0] == -1.0
+        assert env.action_space.shape == (2 * T_DAY,)

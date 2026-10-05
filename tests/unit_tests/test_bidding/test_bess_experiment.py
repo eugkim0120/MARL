@@ -66,16 +66,17 @@ class TestMakeBessParams:
         assert params["bess"]["power_mw"] == POWER
         assert params["bess"]["duration_h"] == DURATION
 
-    def test_that_default_battery_starts_empty_so_it_cannot_sell_free_energy(self):
+    def test_that_default_battery_starts_half_full_for_cyclic_days(self):
         params = make_bess_params(N=4, T=24, power_mw=POWER, duration_h=DURATION)
-        assert params["bess"]["initial_soc_frac"] == 0.0
+        assert params["bess"]["initial_soc_frac"] == 0.5
 
-        metrics = evaluate_market_metrics(
-            fixed_agents([1.0, -10.0]), {**PARAMS, "bess": params["bess"]},
-            num_episodes=1, seed=None,
-        )
-        assert metrics["bess_discharge_mwh_mean"] == 0.0
-        assert metrics["bess_profit_mean"] == 0.0
+    def test_that_sweep_configs_run_every_agent_day_ahead(self):
+        baseline = SweepConfig(None, None, 42).param_func()(N=3, T=24)
+        with_battery = SweepConfig(25, 4, 42).param_func()(N=4, T=24)
+
+        assert baseline["day_ahead"] is True
+        assert with_battery["day_ahead"] is True
+        assert with_battery["bess"]["power_mw"] == 25
 
 
 class TestEvaluateWithBattery:

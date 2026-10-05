@@ -30,13 +30,15 @@ N_GENERATORS = 3
 # Same demand draws for every config, so differences come from the battery, not noise.
 EVAL_SEED = 10_000
 
+# Day-ahead training: one environment step is one simulated day, so
+# timesteps_per_agent counts days.
 PRESETS = {
     "smoke": {
         "powers": [10, 25, 50],
         "durations": [1, 4],
-        "seeds": [42],
-        "num_rounds": 2,
-        "timesteps_per_agent": 1_000,
+        "seeds": [42, 43, 44],
+        "num_rounds": 3,
+        "timesteps_per_agent": 5_000,
         "eval_episodes": 20,
         "update_probability": 1.0,
     },
@@ -45,7 +47,7 @@ PRESETS = {
         "durations": [1, 2, 4, 8],
         "seeds": [42, 43, 44],
         "num_rounds": 5,
-        "timesteps_per_agent": 5_000,
+        "timesteps_per_agent": 20_000,
         "eval_episodes": 20,
         "update_probability": 1.0,
     },
@@ -73,10 +75,14 @@ class SweepConfig:
         return N_GENERATORS if self.is_baseline else N_GENERATORS + 1
 
     def param_func(self):
+        # Every agent, baseline generators included, commits to a full day at once.
         if self.is_baseline:
-            return make_default_params
+            return partial(make_default_params, day_ahead=True)
         return partial(
-            make_bess_params, power_mw=self.power_mw, duration_h=self.duration_h
+            make_bess_params,
+            power_mw=self.power_mw,
+            duration_h=self.duration_h,
+            day_ahead=True,
         )
 
 

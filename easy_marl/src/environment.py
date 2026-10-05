@@ -41,6 +41,8 @@ class MARLElectricityMarketEnv(gym.Env):
         self.T = params["T"]
         self.max_bid_delta = params.get("max_bid_delta", 50.0)
         self.lambda_bid_penalty = params.get("lambda_bid_penalty", 0.01)
+        # Day-ahead: every agent commits to all T hours at once and one step is one day.
+        self.day_ahead = bool(params.get("day_ahead", False))
 
         # Demand & generator parameters
         self.D_profile = np.array(params["demand_profile"], dtype=np.float32)
@@ -78,15 +80,21 @@ class MARLElectricityMarketEnv(gym.Env):
             self.K_all = self.K
             self.c_all = self.c
 
-        # Observer setup
+        # Observer setup (day-ahead agents use the fixed layout of _get_day_obs instead)
         obs_dim_fn, obs_fn = OBSERVERS[observer_name]
-        self.obs_dim = obs_dim_fn(self.N_generators)
+        if self.day_ahead:
+            # Whole demand profile plus own capacity and cost (battery: power, energy, reference price).
+            self.obs_dim = self.T + 2
+            bess_obs_dim = self.T + 3
+        else:
+            self.obs_dim = obs_dim_fn(self.N_generators)
+            # Battery sees the market features plus its state of charge.
+            bess_obs_dim = obs_dim_fn(self.N) + 1
         self._obs_fn = obs_fn  # bind directly (no dict lookup later)
         self.other_mask = np.arange(self.N_generators) != self.agent_index
         self.obs_buf = np.empty(self.obs_dim, dtype=np.float32)
         if self.has_bess:
-            # Battery sees the market features plus its state of charge.
-            self.bess_obs_buf = np.empty(obs_dim_fn(self.N) + 1, dtype=np.float32)
+            self.bess_obs_buf = np.empty(bess_obs_dim, dtype=np.float32)
 
         is_bess_agent = self.has_bess and self.agent_index == self.bess_index
         own_obs_dim = len(self.bess_obs_buf) if is_bess_agent else self.obs_dim
@@ -97,9 +105,19 @@ class MARLElectricityMarketEnv(gym.Env):
         # Action space; the battery's first component is signed (<0 charge, >0 discharge)
         reasonable_bound = 10
         quantity_low = -1.0 if is_bess_agent else 0.0
+        if self.day_ahead:
+            # Flat layout: T quantity parameters, then T price parameters.
+            low = np.concatenate(
+                [np.full(self.T, quantity_low), np.full(self.T, -reasonable_bound)]
+            )
+            high = np.concatenate(
+                [np.full(self.T, 1.0), np.full(self.T, reasonable_bound)]
+            )
+        else:
+            low = np.array([quantity_low, -reasonable_bound])
+            high = np.array([1.0, reasonable_bound])
         self.action_space = spaces.Box(
-            low=np.array([quantity_low, -reasonable_bound], dtype=np.float32),
-            high=np.array([1.0, reasonable_bound], dtype=np.float32),
+            low=low.astype(np.float32), high=high.astype(np.float32)
         )
 
         # misc
@@ -171,6 +189,9 @@ class MARLElectricityMarketEnv(gym.Env):
         if agent_index is None:
             agent_index = self.agent_index
 
+        if self.day_ahead:
+            return self._get_day_obs(agent_index)
+
         if self.has_bess and agent_index == self.bess_index:
             self._obs_fn(
                 self.D_profile,
@@ -200,6 +221,36 @@ class MARLElectricityMarketEnv(gym.Env):
             self.t,
         )
         return obs
+
+    def _get_day_obs(self, agent_index: int) -> np.ndarray:
+        """Day-ahead observation: the whole demand profile plus the agent's own static features."""
+
+        T = self.T
+        if self.has_bess and agent_index == self.bess_index:
+            buf = self.bess_obs_buf
+            buf[T] = self.bess_power / self.capacity_scale
+            buf[T + 1] = self.bess_energy / (self.capacity_scale * T)
+            buf[T + 2] = self.bess_bid_ref / self.cost_scale
+        else:
+            buf = self.obs_buf
+            buf[T] = self.K[agent_index] / self.capacity_scale
+            buf[T + 1] = self.c[agent_index] / self.cost_scale
+        buf[:T] = self.D_profile / self.demand_scale
+        return buf
+
+    def _as_schedule(self, action, agent_index: int) -> np.ndarray:
+        """Return a (T, 2) schedule of [quantity, price] parameters for a day-ahead agent."""
+
+        action = np.asarray(action, dtype=np.float32)
+        if action.size == 2:
+            # A constant action such as the null bid applies to every hour.
+            return np.tile(action, (self.T, 1))
+        if action.size != 2 * self.T:
+            raise ValueError(
+                f"Action for agent {agent_index} has size {action.size}, "
+                f"expected 2 or {2 * self.T}."
+            )
+        return np.stack([action[: self.T], action[self.T :]], axis=1)
 
     def update_agent_bid(self, action: np.ndarray, agent_idx: int) -> None:
         """Project an agent's action into quantity and price bids."""
@@ -275,7 +326,10 @@ class MARLElectricityMarketEnv(gym.Env):
     def step(
         self, action, fixed_evaluation: bool = False
     ) -> Tuple[Optional[np.ndarray], float, bool, bool, Dict[str, float]]:
-        """Advance the environment by one hour of bidding/clearing."""
+        """Advance the environment by one hour, or by the whole day in day-ahead mode."""
+        if self.day_ahead:
+            return self._step_day(action, fixed_evaluation)
+
         # Reset bids/q to default baseline
         # self.q_all[:] = self.K  # default: offer max capacity
         # self.b_all[:] = self.c  # default: bid at cost
@@ -291,6 +345,44 @@ class MARLElectricityMarketEnv(gym.Env):
 
             # Update with current agent action
             self.update_agent_bid(action, self.agent_index)
+
+        r = self._run_hour()
+
+        # Step time
+        self.t += 1
+        done = self.t >= self.T
+        obs = self._get_obs() if not done else None
+        # gymnasium step returns (obs, reward, terminated, truncated, info)
+        # keep compatibility: return (obs, reward, terminated, truncated, info)
+        terminated = done
+        truncated = False
+        return obs, r[self.agent_index], terminated, truncated, {}
+
+    def _step_day(
+        self, action, fixed_evaluation: bool
+    ) -> Tuple[Optional[np.ndarray], float, bool, bool, Dict[str, float]]:
+        """Collect every agent's full-day schedule, then clear the T hours in order."""
+
+        schedules = np.empty((self.N, self.T, 2), dtype=np.float32)
+        for j in range(self.N):
+            if j == self.agent_index and not fixed_evaluation:
+                agent_action = action
+            else:
+                agent_action = self.fixed_policies[j](self._get_obs(agent_index=j))
+            schedules[j] = self._as_schedule(agent_action, j)
+
+        day_reward = np.zeros(self.N)
+        for t in range(self.T):
+            self.t = t
+            for j in range(self.N):
+                self.update_agent_bid(schedules[j, t], j)
+            day_reward += self._run_hour()
+
+        self.t = self.T
+        return None, day_reward[self.agent_index], True, False, {}
+
+    def _run_hour(self) -> np.ndarray:
+        """Clear hour ``self.t`` from the bids already in ``b_all``/``q_all``; returns scaled rewards."""
 
         # Run market clearing
         demand = self.D_profile[self.t]
@@ -343,16 +435,7 @@ class MARLElectricityMarketEnv(gym.Env):
         self.output["market_prices"][t_idx] = P_t
         self.output["rewards"][t_idx] = r
         self.output["demand"][t_idx] = demand
-
-        # Step time
-        self.t += 1
-        done = self.t >= self.T
-        obs = self._get_obs() if not done else None
-        # gymnasium step returns (obs, reward, terminated, truncated, info)
-        # keep compatibility: return (obs, reward, terminated, truncated, info)
-        terminated = done
-        truncated = False
-        return obs, r[self.agent_index], terminated, truncated, {}
+        return r
 
     def render(self) -> None:
         """Print latest timestep data (for basic debugging only)."""
@@ -379,6 +462,7 @@ class MARLElectricityMarketEnv(gym.Env):
             "demand_profile": self.D_profile.tolist(),
             "max_bid_delta": self.max_bid_delta,
             "lambda_bid_penalty": self.lambda_bid_penalty,
+            "day_ahead": self.day_ahead,
         }
         if self.has_bess:
             metadata["bess"] = {
