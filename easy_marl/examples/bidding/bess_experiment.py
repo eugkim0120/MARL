@@ -46,17 +46,19 @@ MIN_USEFUL_CYCLES = 0.6
 
 # Day-ahead training: one environment step is one simulated day, so
 # timesteps_per_agent counts days.
+# pretrain_change_tol sits just above the PPO noise floor: in probes the per-round
+# policy change settled around 0.1 and never dropped below 0.07.
 PRESETS = {
     "smoke": {
         "powers": [10, 25, 50],
         "durations": [1, 4],
         "seeds": list(range(42, 52)),
         "arms": ["frozen"],
-        "pretrain_rounds": 8,
-        "pretrain_timesteps_per_agent": 5_000,
-        "pretrain_change_tol": 0.05,
-        "num_rounds": 3,
-        "timesteps_per_agent": 5_000,
+        "pretrain_rounds": 12,
+        "pretrain_timesteps_per_agent": 10_000,
+        "pretrain_change_tol": 0.15,
+        "num_rounds": 5,
+        "timesteps_per_agent": 10_000,
         "eval_episodes": 20,
         "update_probability": 1.0,
     },
@@ -65,9 +67,9 @@ PRESETS = {
         "durations": [1, 2, 4, 8],
         "seeds": list(range(42, 52)),
         "arms": ["frozen"],
-        "pretrain_rounds": 10,
+        "pretrain_rounds": 20,
         "pretrain_timesteps_per_agent": 20_000,
-        "pretrain_change_tol": 0.05,
+        "pretrain_change_tol": 0.15,
         "num_rounds": 5,
         "timesteps_per_agent": 20_000,
         "eval_episodes": 20,
