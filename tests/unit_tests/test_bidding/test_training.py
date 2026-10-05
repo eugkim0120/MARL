@@ -6,12 +6,18 @@ import multiprocessing
 import subprocess
 import sys
 import numpy as np
+import pytest
 import torch
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from easy_marl.src.agents import PPOAgent
 from easy_marl.src.environment import MARLElectricityMarketEnv
-from easy_marl.examples.bidding.training import set_all_seeds, train_single_agent_worker
+from easy_marl.examples.bidding.training import (
+    init_agents,
+    parallel_train,
+    set_all_seeds,
+    train_single_agent_worker,
+)
 
 
 # Minimal test config
@@ -194,3 +200,92 @@ class TestTrainingEquivalence:
                 atol=1e-5,
                 err_msg=f"Agent {i} log_std differs",
             )
+
+
+DAY_N = 2
+DAY_T = 4
+DAY_TIMESTEPS = 48
+
+
+def day_ahead_params(N=DAY_N, T=DAY_T):
+    return {
+        "N_generators": N,
+        "T": T,
+        "day_ahead": True,
+        "demand_profile": [50.0] * T,
+        "capacities": [30.0] * N,
+        "costs": [20.0 + 5.0 * i for i in range(N)],
+        "max_bid_delta": 50.0,
+        "lambda_bid_penalty": 0.01,
+    }
+
+
+def train_day_ahead(initial_agents=None, frozen_agents=(), num_rounds=1):
+    return parallel_train(
+        N=DAY_N,
+        T=DAY_T,
+        num_rounds=num_rounds,
+        timesteps_per_agent=DAY_TIMESTEPS,
+        seed=SEED,
+        save_dir=None,
+        verbose=False,
+        update_probability=1.0,
+        param_func=day_ahead_params,
+        n_workers=DAY_N,
+        initial_agents=initial_agents,
+        frozen_agents=frozen_agents,
+    )
+
+
+def make_initial_agents():
+    return init_agents(DAY_N, day_ahead_params(), seed=SEED + 100)
+
+
+def assert_weights_equal(a, b):
+    wa, wb = get_weights(a), get_weights(b)
+    for name in wa:
+        np.testing.assert_array_equal(wa[name], wb[name], err_msg=name)
+
+
+def weights_differ(a, b):
+    wa, wb = get_weights(a), get_weights(b)
+    return any(not np.array_equal(wa[name], wb[name]) for name in wa)
+
+
+class TestParallelTrainFrozenAndInitialAgents:
+    def test_that_frozen_agents_keep_their_initial_policy_while_others_train(self):
+        initial = make_initial_agents()
+        reference = make_initial_agents()
+
+        agents, _ = train_day_ahead(initial_agents=initial, frozen_agents={0}, num_rounds=2)
+
+        assert_weights_equal(agents[0], reference[0])
+        assert weights_differ(agents[1], reference[1])
+
+    def test_that_a_frozen_agent_still_acts_as_an_opponent_of_the_trained_agent(self):
+        frozen_a = make_initial_agents()
+        frozen_b = make_initial_agents()
+        frozen_b[0] = init_agents(DAY_N, day_ahead_params(), seed=SEED + 200)[0]
+
+        trained_a, _ = train_day_ahead(initial_agents=frozen_a, frozen_agents={0})
+        trained_b, _ = train_day_ahead(initial_agents=frozen_b, frozen_agents={0})
+
+        # Same starting agent 1 and seed, different frozen opponent: training must differ.
+        assert weights_differ(trained_a[1], trained_b[1])
+
+    def test_that_the_callers_initial_agents_are_not_modified_by_training(self):
+        initial = make_initial_agents()
+        reference = make_initial_agents()
+
+        train_day_ahead(initial_agents=initial, frozen_agents={0})
+
+        assert_weights_equal(initial[0], reference[0])
+        assert_weights_equal(initial[1], reference[1])
+
+    def test_that_wrong_number_of_initial_agents_is_rejected(self):
+        with pytest.raises(ValueError, match="initial_agents"):
+            train_day_ahead(initial_agents=make_initial_agents()[:1])
+
+    def test_that_frozen_index_out_of_range_is_rejected(self):
+        with pytest.raises(ValueError, match="frozen_agents"):
+            train_day_ahead(frozen_agents={DAY_N})

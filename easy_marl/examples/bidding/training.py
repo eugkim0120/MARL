@@ -58,7 +58,7 @@ import os
 import random
 import numpy as np
 import torch
-from typing import List, Dict, Tuple
+from typing import Collection, Dict, List, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import psutil
@@ -723,6 +723,8 @@ def parallel_train(
     T: int = 24,
     observer_name: str = DEFAULT_OBS,
     update_probability: float = DEFAULT_UPDATE_PROB,
+    initial_agents: Optional[List[PPOAgent]] = None,
+    frozen_agents: Collection[int] = (),
 ) -> Tuple[List[PPOAgent], Dict]:
     """
     Simultaneous Best Response (SBR) training with Jacobi-style updates.
@@ -763,28 +765,48 @@ def parallel_train(
         observer_name: Type of observation function ("simple", "basic", or "simple_v2")
         update_probability: Probability (0.0 to 1.0) that an agent updates its policy in a round.
                           Values < 1.0 introduce "inertia" which helps convergence in cyclic games.
+        initial_agents: Optional starting policies, one per agent. They are copied, so the
+                        caller's agents are never modified. Defaults to freshly initialised agents.
+        frozen_agents: Indices of agents that never train. They still act as opponents
+                       of the agents that do.
 
     Returns:
         agents: List of trained PPOAgent objects
         training_info: Dictionary containing training metadata and configuration
     """
-    # Limit workers to number of agents
-    n_workers = min(n_workers, N)
+    frozen = frozenset(frozen_agents)
+    out_of_range = sorted(i for i in frozen if not 0 <= i < N)
+    if out_of_range:
+        raise ValueError(f"frozen_agents {out_of_range} out of range for N={N}.")
+    if initial_agents is not None and len(initial_agents) != N:
+        raise ValueError(
+            f"initial_agents has {len(initial_agents)} agents, expected N={N}."
+        )
+
+    # Limit workers to number of agents that train
+    n_workers = max(1, min(n_workers, N - len(frozen)))
 
     # Generate environment parameters
     params = param_func(N=N, T=T)
-    agents = init_agents(N, params, seed, observer_name)
+    if initial_agents is None:
+        agents = init_agents(N, params, seed, observer_name)
+    else:
+        agents = [
+            PPOAgent.from_bytes(agent.save_to_bytes(), agent.env)
+            for agent in initial_agents
+        ]
 
     # Training loop
     training_info = {
         "N": N,
         "num_rounds": num_rounds,
         "timesteps_per_agent": timesteps_per_agent,
-        "total_timesteps": N * num_rounds * timesteps_per_agent,
+        "total_timesteps": (N - len(frozen)) * num_rounds * timesteps_per_agent,
         "seed": seed,
         "parallel": True,
         "n_workers": n_workers,
         "update_probability": update_probability,
+        "frozen_agents": sorted(frozen),
     }
 
     # Ensure inertia decisions are reproducible
@@ -811,6 +833,8 @@ def parallel_train(
             active_agent_indices = []
 
             for i in range(N):
+                if i in frozen:
+                    continue
                 # Inertia check
                 # Use a local RNG seeded with (seed, round, agent) for consistency with sequential_train
                 rng = random.Random(seed + round_idx * 100 + i)
