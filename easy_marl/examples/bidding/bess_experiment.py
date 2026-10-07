@@ -128,18 +128,20 @@ def build_configs(powers, durations, seeds, arms=("frozen",)) -> List[SweepConfi
     return configs
 
 
-def evaluate_market_metrics(
+def simulate_episodes(
     agents,
     params: Dict,
     num_episodes: int,
     seed: Optional[int],
     observer_name: str = DEFAULT_OBS,
-) -> Dict:
-    """Run frozen agents over seeded demand episodes and summarise market outcomes."""
-    prices, demands, gen_profits = [], [], []
-    charges, discharges = [], []
-    loss_of_load = []
+) -> Dict[str, np.ndarray]:
+    """Run frozen agents over seeded demand episodes and record the full dispatch.
 
+    Every array is float32 with the episode first: prices and demand are (episode, hour),
+    per-agent arrays are (episode, hour, agent), and the battery arrays exist only when
+    the market has a battery.
+    """
+    episodes: List[Dict[str, np.ndarray]] = []
     for ep in range(num_episodes):
         env = MARLElectricityMarketEnv(
             agents=agents,
@@ -152,25 +154,34 @@ def evaluate_market_metrics(
         while not done:
             _, _, terminated, truncated, _ = env.step(None, fixed_evaluation=True)
             done = terminated or truncated
+        episodes.append(env.output)
 
-        out = env.output
-        price = out["market_prices"].astype(np.float64)
-        prices.append(price)
-        demands.append(out["demand"].astype(np.float64))
-        q_gen = out["q_cleared"][:, : env.N_generators].astype(np.float64)
-        gen_profits.append(((price[:, None] - env.c[None, :]) * q_gen).sum(axis=0))
-        charge = out["bess_charge"] if env.has_bess else np.zeros(env.T)
-        discharge = out["bess_discharge"] if env.has_bess else np.zeros(env.T)
-        charges.append(np.asarray(charge, dtype=np.float64))
-        discharges.append(np.asarray(discharge, dtype=np.float64))
-        served = q_gen.sum(axis=1) + discharges[-1] - charges[-1]
-        loss_of_load.append(np.maximum(demands[-1] - served, 0.0).sum())
+    keys = ["market_prices", "demand", "bids", "q_offered", "q_cleared", "rewards"]
+    if env.has_bess:
+        keys += ["bess_charge", "bess_discharge", "soc"]
+    dispatch = {
+        key: np.stack([out[key] for out in episodes]).astype(np.float32) for key in keys
+    }
+    dispatch["generator_cost"] = np.asarray(env.c, dtype=np.float32)
+    dispatch["generator_capacity"] = np.asarray(env.K, dtype=np.float32)
+    return dispatch
 
-    prices = np.array(prices)
-    demands = np.array(demands)
-    gen_profits = np.array(gen_profits)
-    charges = np.array(charges)
-    discharges = np.array(discharges)
+
+def summarise_market(dispatch: Dict[str, np.ndarray], params: Dict) -> Dict:
+    """Market outcome metrics from a recorded dispatch."""
+    prices = dispatch["market_prices"].astype(np.float64)
+    demands = dispatch["demand"].astype(np.float64)
+    cost = dispatch["generator_cost"].astype(np.float64)
+    q_gen = dispatch["q_cleared"][:, :, : len(cost)].astype(np.float64)
+    gen_profits = ((prices[:, :, None] - cost[None, None, :]) * q_gen).sum(axis=1)
+    has_bess = "bess" in params
+    if has_bess:
+        charges = dispatch["bess_charge"].astype(np.float64)
+        discharges = dispatch["bess_discharge"].astype(np.float64)
+    else:
+        charges = discharges = np.zeros_like(prices)
+    served = q_gen.sum(axis=2) + discharges - charges
+    loss_of_load = np.maximum(demands - served, 0.0).sum(axis=1)
 
     metrics = {
         "mean_price": float(prices.mean()),
@@ -182,7 +193,7 @@ def evaluate_market_metrics(
         "price_max": float(prices.max()),
         "mean_hourly_price": prices.mean(axis=0).tolist(),
         "consumer_cost_mean": float((prices * demands).sum(axis=1).mean()),
-        "loss_of_load_mwh_mean": float(np.mean(loss_of_load)),
+        "loss_of_load_mwh_mean": float(loss_of_load.mean()),
         "generator_profit_mean": gen_profits.mean(axis=0).tolist(),
         "generator_profit_total_mean": float(gen_profits.sum(axis=1).mean()),
         "bess_profit_mean": None,
@@ -193,7 +204,7 @@ def evaluate_market_metrics(
         "bess_mean_discharge_price": None,
     }
 
-    if "bess" in params:
+    if has_bess:
         energy = params["bess"]["power_mw"] * params["bess"]["duration_h"]
         charged_total = charges.sum()
         discharged_total = discharges.sum()
@@ -221,6 +232,17 @@ def evaluate_market_metrics(
         )
     return metrics
 
+
+def evaluate_market_metrics(
+    agents,
+    params: Dict,
+    num_episodes: int,
+    seed: Optional[int],
+    observer_name: str = DEFAULT_OBS,
+) -> Dict:
+    """Run frozen agents over seeded demand episodes and summarise market outcomes."""
+    dispatch = simulate_episodes(agents, params, num_episodes, seed, observer_name)
+    return summarise_market(dispatch, params)
 
 
 def pretrain_dir(out_dir, seed: int) -> Path:
@@ -334,13 +356,71 @@ def run_config(config: SweepConfig, preset: Dict, out_dir: Path) -> Dict:
             frozen_agents=frozen_agents,
         )
 
-    metrics = evaluate_market_metrics(
+    dispatch = simulate_episodes(
         agents, params, num_episodes=preset["eval_episodes"], seed=EVAL_SEED
     )
+    np.savez_compressed(config_dir / "dispatch.npz", **dispatch)
+    metrics = summarise_market(dispatch, params)
     result = {"config": asdict(config), "preset": preset, "metrics": metrics}
+    # Written last: its presence marks the config as complete.
     with open(config_dir / "metrics.json", "w") as f:
         json.dump(result, f, indent=2)
     return result
+
+
+def _metrics_match(a, b) -> bool:
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_metrics_match(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_metrics_match(x, y) for x, y in zip(a, b))
+    if a is None or b is None:
+        return a is b
+    return bool(np.isclose(a, b, rtol=1e-6, atol=1e-9))
+
+
+def _saved_agents(config: SweepConfig, preset: Dict, out_dir: Path, params: Dict):
+    """Final agents of a finished config, loaded from the checkpoints its run left behind."""
+    final_round = out_dir / config.config_id / "training" / f"round_{preset['num_rounds']}"
+    agents = []
+    for i in range(config.n_agents):
+        path = final_round / f"agent_{i}.zip"
+        if not path.exists() and i < N_GENERATORS and config.arm == "frozen":
+            path = pretrain_dir(out_dir, config.seed) / f"agent_{i}.zip"
+        if not path.exists():
+            raise FileNotFoundError(f"Saved agent missing for {config.config_id}: {path}")
+        agents.append(
+            PPOAgent.from_bytes(path.read_bytes(), _generator_env(params, config.seed, i))
+        )
+    return agents
+
+
+def replay_dispatch(out_dir) -> List[str]:
+    """Write dispatch.npz for finished configs that lack it, from their saved agents.
+
+    Evaluation is deterministic, so the replay must reproduce the stored metrics;
+    a config whose metrics differ raises instead of getting a dispatch file.
+    """
+    out_dir = Path(out_dir)
+    replayed = []
+    for metrics_path in sorted(out_dir.glob("*/metrics.json")):
+        config_dir = metrics_path.parent
+        if (config_dir / "dispatch.npz").exists():
+            continue
+        stored = json.loads(metrics_path.read_text())
+        config = SweepConfig(**stored["config"])
+        preset = stored["preset"]
+        params = config.param_func()(N=config.n_agents, T=HOURS)
+        agents = _saved_agents(config, preset, out_dir, params)
+        dispatch = simulate_episodes(
+            agents, params, num_episodes=preset["eval_episodes"], seed=EVAL_SEED
+        )
+        if not _metrics_match(summarise_market(dispatch, params), stored["metrics"]):
+            raise ValueError(
+                f"Replay of {config.config_id} did not reproduce its stored metrics."
+            )
+        np.savez_compressed(config_dir / "dispatch.npz", **dispatch)
+        replayed.append(config.config_id)
+    return replayed
 
 
 def run_sweep(configs: List[SweepConfig], preset: Dict, out_dir) -> None:
@@ -743,9 +823,18 @@ def main():
     agg = sub.add_parser("aggregate", help="write results.csv, plots and report.md")
     agg.add_argument("--out", required=True)
 
+    replay = sub.add_parser(
+        "replay", help="write dispatch.npz for finished configs that lack it"
+    )
+    replay.add_argument("--out", required=True)
+
     args = parser.parse_args()
     if args.command == "aggregate":
         print(f"Report: {aggregate(args.out)}")
+        return
+    if args.command == "replay":
+        done = replay_dispatch(args.out)
+        print(f"Wrote dispatch for {len(done)} configs")
         return
 
     preset = dict(PRESETS[args.preset])

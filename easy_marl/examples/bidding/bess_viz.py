@@ -84,6 +84,72 @@ def baseline_hourly(out_dir, arm: str) -> np.ndarray:
     return np.mean(profiles, axis=0)
 
 
+def load_dispatch(out_dir, config_id: str) -> Dict[str, np.ndarray]:
+    path = Path(out_dir) / config_id / "dispatch.npz"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No dispatch for {config_id} ({path}). Run "
+            f"`python -m easy_marl.examples.bidding.bess_experiment replay --out {out_dir}` "
+            "to regenerate it from the saved agents."
+        )
+    with np.load(path) as data:
+        return {key: data[key] for key in data.files}
+
+
+def _hourly_dispatch(dispatch: Dict[str, np.ndarray]) -> Dict[str, Optional[np.ndarray]]:
+    """Episode-averaged hourly generator output, battery flows and price of one config."""
+    n_generators = len(dispatch["generator_cost"])
+    has_battery = "bess_discharge" in dispatch
+    return {
+        "generators": dispatch["q_cleared"][:, :, :n_generators].mean(axis=0).T,
+        "discharge": dispatch["bess_discharge"].mean(axis=0) if has_battery else None,
+        "charge": dispatch["bess_charge"].mean(axis=0) if has_battery else None,
+        "price": dispatch["market_prices"].mean(axis=0),
+        "demand": dispatch["demand"].mean(axis=0),
+    }
+
+
+def _mean_over_seeds(items: List[Dict[str, Optional[np.ndarray]]]) -> Dict[str, Optional[np.ndarray]]:
+    return {
+        key: None if items[0][key] is None else np.mean([item[key] for item in items], axis=0)
+        for key in items[0]
+    }
+
+
+def dispatch_profile(out_dir, arm: str, power: float, duration: float) -> Dict:
+    """Seed-averaged hourly dispatch of one battery config next to its paired baselines."""
+    rows = load_results(out_dir)
+    pairs = [
+        (r, base)
+        for r, base in _pairs(rows, arm)
+        if r["power_mw"] == power and r["duration_h"] == duration
+    ]
+    if not pairs:
+        raise ValueError(f"No config {power:g} MW / {duration:g} h in arm {arm!r}.")
+    battery = _mean_over_seeds(
+        [_hourly_dispatch(load_dispatch(out_dir, r["config_id"])) for r, _ in pairs]
+    )
+    baseline = _mean_over_seeds(
+        [_hourly_dispatch(load_dispatch(out_dir, base["config_id"])) for _, base in pairs]
+    )
+    return {"demand": battery.pop("demand"), "battery": battery, "baseline": baseline}
+
+
+def generator_output_change(out_dir, arm: str) -> Dict[Tuple[float, float], List[float]]:
+    """Per (power, duration): mean over seeds of each generator's daily MWh minus its same-seed baseline."""
+    rows = load_results(out_dir)
+    daily: Dict[str, np.ndarray] = {}
+    per_config: Dict[Tuple[float, float], List[np.ndarray]] = {}
+    for r, base in _pairs(rows, arm):
+        for config_id in (r["config_id"], base["config_id"]):
+            if config_id not in daily:
+                generators = _hourly_dispatch(load_dispatch(out_dir, config_id))["generators"]
+                daily[config_id] = generators.sum(axis=1)
+        delta = daily[r["config_id"]] - daily[base["config_id"]]
+        per_config.setdefault((r["power_mw"], r["duration_h"]), []).append(delta)
+    return {key: np.mean(deltas, axis=0).tolist() for key, deltas in sorted(per_config.items())}
+
+
 def effect_grid(effects: List[Dict], arm: str, metric: str):
     """Mean paired difference and significance on the power x duration grid."""
     if metric not in DELTA_METRICS:
@@ -214,6 +280,68 @@ def _by_config(rows: List[Dict], arm: str, key: str):
     return groups
 
 
+def _stack(ax, hours, profile, title):
+    plt = _pyplot()
+    generators = profile["generators"]
+    colors = plt.cm.Greys(np.linspace(0.35, 0.8, len(generators)))
+    layers = list(generators)
+    labels = [f"Generator {g}" for g in range(len(generators))]
+    if profile["discharge"] is not None:
+        layers.append(profile["discharge"])
+        labels.append("Battery discharge")
+        colors = list(colors) + ["tab:green"]
+    ax.stackplot(hours, layers, labels=labels, colors=colors)
+    if profile["charge"] is not None:
+        ax.fill_between(hours, 0, -profile["charge"], color="tab:red", alpha=0.7, label="Battery charge")
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel("Hour of day")
+    ax.set_ylabel("MW")
+
+
+def fig_dispatch(out_dir, arm: str, power: float, duration: float):
+    plt = _pyplot()
+    profile = dispatch_profile(out_dir, arm, power, duration)
+    hours = np.arange(len(profile["demand"]))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 3.8), sharex=True)
+    _stack(axes[0], hours, profile["baseline"], "No battery")
+    _stack(axes[1], hours, profile["battery"], f"With {_config_label(power, duration)} battery")
+    for ax in axes[:2]:
+        ax.plot(hours, profile["demand"], color="tab:blue", linestyle="--", label="Demand")
+    axes[1].legend(fontsize=7, loc="upper left", ncol=2)
+    axes[2].plot(hours, profile["baseline"]["price"], color="black", label="No battery")
+    axes[2].plot(hours, profile["battery"]["price"], color="tab:green", label="With battery")
+    axes[2].set_title("Market price", fontsize=10)
+    axes[2].set_xlabel("Hour of day")
+    axes[2].set_ylabel("Price")
+    axes[2].legend(fontsize=7)
+    fig.suptitle(f"Hourly dispatch, {_config_label(power, duration)} ({arm}), mean over seeds and episodes", fontsize=11)
+    fig.tight_layout()
+    return fig
+
+
+def fig_generator_change(out_dir, arm: str):
+    plt = _pyplot()
+    change = generator_output_change(out_dir, arm)
+    configs = sorted(change, key=lambda key: (key[1], key[0]))
+    n_generators = len(next(iter(change.values())))
+    width = 0.8 / n_generators
+    fig, ax = plt.subplots(figsize=(max(6, 0.9 * len(configs) + 2), 3.8))
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    colors = plt.cm.Greys(np.linspace(0.35, 0.8, n_generators))
+    for g in range(n_generators):
+        ax.bar(
+            np.arange(len(configs)) + (g - (n_generators - 1) / 2) * width,
+            [change[key][g] for key in configs],
+            width, color=colors[g], label=f"Generator {g}",
+        )
+    ax.set_xticks(range(len(configs)), [_config_label(*key) for key in configs], rotation=45, ha="right")
+    ax.set_ylabel("Change in daily output (MWh)")
+    ax.legend(fontsize=7)
+    ax.set_title(f"Generator output displaced by the battery ({arm})", fontsize=11)
+    fig.tight_layout()
+    return fig
+
+
 def fig_battery(rows: List[Dict], arm: str):
     plt = _pyplot()
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
@@ -293,6 +421,13 @@ img { max-width: 100%; height: auto; display: block; margin: 8px 0; }
 """
 
 
+def _largest_config(battery_rows: List[Dict], arm: str) -> Tuple[float, float]:
+    """Biggest power, then longest duration, among the arm's battery runs."""
+    return max(
+        (r["power_mw"], r["duration_h"]) for r in battery_rows if r["arm"] == arm
+    )
+
+
 def _section(title: str, note: str, figure_html: str) -> str:
     return f"<h3>{html.escape(title)}</h3><p class=\"note\">{html.escape(note)}</p>{figure_html}"
 
@@ -344,6 +479,20 @@ def build_dashboard(out_dir, name: str = "dashboard.html") -> Path:
                 "Battery behaviour",
                 "Whether the learned battery actually arbitrages: cycles, profit and the price it buys and sells at.",
                 _embed(fig_battery(rows, arm), f"battery behaviour {arm}"),
+            ),
+        ]
+        power, duration = _largest_config(battery_rows, arm)
+        parts += [
+            _section(
+                "Dispatch",
+                f"Who produces each hour with and without the largest battery ({_config_label(power, duration)}); "
+                "battery charging is drawn below zero.",
+                _embed(fig_dispatch(out_dir, arm, power, duration), f"hourly dispatch {arm}"),
+            ),
+            _section(
+                "Generator output displaced",
+                "Change in each generator's daily energy sold, battery minus same-seed baseline.",
+                _embed(fig_generator_change(out_dir, arm), f"generator output change {arm}"),
             ),
         ]
     if convergence:

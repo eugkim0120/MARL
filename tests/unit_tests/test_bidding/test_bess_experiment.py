@@ -21,8 +21,10 @@ from easy_marl.examples.bidding.bess_experiment import (
     evaluate_market_metrics,
     get_pretrained,
     paired_effects,
+    replay_dispatch,
     run_config,
     run_sweep,
+    simulate_episodes,
 )
 from easy_marl.examples.bidding.training import (
     DEFAULT_OBS,
@@ -420,3 +422,93 @@ class TestAggregate:
         text = Path(report).read_text()
         assert "Pretraining" in text
         assert "Paired effects" in text
+
+
+class TestDispatchRecording:
+    def test_that_simulation_records_every_agent_per_hour_in_float32(self):
+        dispatch = simulate_episodes(
+            fixed_agents([1.0, 10.0]), PARAMS, num_episodes=3, seed=5
+        )
+
+        n = 4
+        for key in ("bids", "q_offered", "q_cleared", "rewards"):
+            assert dispatch[key].shape == (3, T, n)
+        for key in ("market_prices", "demand", "bess_charge", "bess_discharge", "soc"):
+            assert dispatch[key].shape == (3, T)
+        for key, value in dispatch.items():
+            assert value.dtype == np.float32, key
+        np.testing.assert_array_equal(dispatch["generator_cost"], PARAMS["costs"])
+        assert dispatch["generator_capacity"].shape == (3,)
+
+    def test_that_a_market_without_a_battery_has_no_battery_arrays(self):
+        dispatch = simulate_episodes(
+            [SimpleAgent() for _ in range(3)],
+            {k: v for k, v in PARAMS.items() if k != "bess"},
+            num_episodes=2,
+            seed=None,
+        )
+
+        assert dispatch["bids"].shape == (2, T, 3)
+        assert not {"bess_charge", "bess_discharge", "soc"} & set(dispatch)
+
+    def test_that_run_config_saves_the_dispatch_next_to_the_metrics(self, tmp_path):
+        run_config(SweepConfig(10, 1, 42), TINY_PRESET, tmp_path)
+
+        with np.load(tmp_path / "p10_d1_s42" / "dispatch.npz") as saved:
+            assert saved["bids"].shape == (TINY_PRESET["eval_episodes"], 24, 4)
+            assert saved["bess_discharge"].shape == (TINY_PRESET["eval_episodes"], 24)
+
+    def test_that_the_baseline_saves_dispatch_for_the_generators_only(self, tmp_path):
+        run_config(SweepConfig(None, None, 42), TINY_PRESET, tmp_path)
+
+        with np.load(tmp_path / "baseline_s42" / "dispatch.npz") as saved:
+            assert saved["q_cleared"].shape == (TINY_PRESET["eval_episodes"], 24, 3)
+            assert "soc" not in saved.files
+
+
+class TestReplayDispatch:
+    @pytest.mark.parametrize("arm", ["frozen", "adaptive"])
+    def test_that_replay_restores_the_dispatch_a_run_would_have_saved(self, tmp_path, arm):
+        configs = [SweepConfig(None, None, 42, arm), SweepConfig(10, 1, 42, arm)]
+        run_sweep(configs, TINY_PRESET, tmp_path)
+        original = {}
+        for config in configs:
+            path = tmp_path / config.config_id / "dispatch.npz"
+            with np.load(path) as saved:
+                original[config.config_id] = {k: saved[k] for k in saved.files}
+            path.unlink()
+
+        replayed = replay_dispatch(tmp_path)
+
+        assert sorted(replayed) == sorted(original)
+        for config_id, arrays in original.items():
+            with np.load(tmp_path / config_id / "dispatch.npz") as saved:
+                assert sorted(saved.files) == sorted(arrays)
+                for key, value in arrays.items():
+                    np.testing.assert_array_equal(saved[key], value, err_msg=key)
+
+    def test_that_replay_skips_configs_that_already_have_dispatch(self, tmp_path):
+        run_config(SweepConfig(10, 1, 42), TINY_PRESET, tmp_path)
+
+        assert replay_dispatch(tmp_path) == []
+
+    def test_that_replay_refuses_metrics_it_cannot_reproduce(self, tmp_path):
+        run_config(SweepConfig(10, 1, 42), TINY_PRESET, tmp_path)
+        config_dir = tmp_path / "p10_d1_s42"
+        (config_dir / "dispatch.npz").unlink()
+        result = json.loads((config_dir / "metrics.json").read_text())
+        result["metrics"]["mean_price"] += 1.0
+        (config_dir / "metrics.json").write_text(json.dumps(result))
+
+        with pytest.raises(ValueError, match="reproduce"):
+            replay_dispatch(tmp_path)
+        assert not (config_dir / "dispatch.npz").exists()
+
+    def test_that_replay_fails_loudly_when_saved_agents_are_missing(self, tmp_path):
+        run_config(SweepConfig(10, 1, 42), TINY_PRESET, tmp_path)
+        config_dir = tmp_path / "p10_d1_s42"
+        (config_dir / "dispatch.npz").unlink()
+        (config_dir / "training" / "round_1" / "agent_3.zip").unlink()
+
+        with pytest.raises(FileNotFoundError, match="agent_3"):
+            replay_dispatch(tmp_path)
