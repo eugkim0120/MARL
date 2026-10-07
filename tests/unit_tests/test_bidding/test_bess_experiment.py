@@ -347,6 +347,29 @@ class TestPairedEffects:
         assert effect["mean_delta"] == pytest.approx(-9.5)
         assert (effect["power_mw"], effect["duration_h"], effect["arm"]) == (10, 1, "frozen")
 
+    def test_that_effects_also_come_as_percent_of_the_mean_baseline_with_the_same_significance(self):
+        rows = [
+            make_row(None, None, 1, mean_price=100.0),
+            make_row(None, None, 2, mean_price=50.0),
+            make_row(10, 1, 1, mean_price=90.0),
+            make_row(10, 1, 2, mean_price=41.0),
+        ]
+
+        effect = next(e for e in paired_effects(rows) if e["metric"] == "mean_price")
+
+        assert effect["baseline_mean"] == pytest.approx(75.0)
+        assert effect["mean_delta_pct"] == pytest.approx(100.0 * -9.5 / 75.0)
+        assert effect["ci_low_pct"] == pytest.approx(100.0 * effect["ci_low"] / 75.0)
+        assert effect["ci_high_pct"] == pytest.approx(100.0 * effect["ci_high"] / 75.0)
+
+    def test_that_a_zero_baseline_has_no_percent_effect_rather_than_a_made_up_one(self):
+        rows = [make_row(None, None, 1), make_row(10, 1, 1, loss_of_load_mwh_mean=2.0)]
+
+        effect = next(e for e in paired_effects(rows) if e["metric"] == "loss_of_load_mwh_mean")
+
+        assert effect["mean_delta"] == pytest.approx(2.0)
+        assert np.isnan(effect["mean_delta_pct"])
+
     def test_that_a_consistent_shift_is_significant_and_scatter_around_zero_is_not(self):
         seeds = range(10)
         rows = [make_row(None, None, s, mean_price=70.0, price_std=10.0) for s in seeds]
@@ -396,6 +419,25 @@ class TestPairedEffects:
         assert low < np.mean(values) < high
 
 
+class TestBatteryYield:
+    def test_that_yield_is_profit_per_mw_as_percent_of_a_full_power_day_at_the_baseline_mean_price(self):
+        rows = [
+            make_row(None, None, 1, mean_price=50.0, hours=4),
+            make_row(10, 1, 1, bess_profit_mean=40.0, hours=4),
+        ]
+
+        battery_yield = bess_experiment.battery_yield_pct(rows)
+
+        # 40 / 10 MW = 4 per MW, against 50 * 4 h = 200 for a flat MW all day.
+        assert battery_yield == {rows[1]["config_id"]: pytest.approx(2.0)}
+
+    def test_that_a_row_without_a_same_seed_baseline_is_an_error(self):
+        rows = [make_row(None, None, 1, hours=4), make_row(10, 1, 2, hours=4)]
+
+        with pytest.raises(ValueError, match="baseline"):
+            bess_experiment.battery_yield_pct(rows)
+
+
 class TestAggregate:
     def test_that_aggregate_writes_paired_effects_and_convergence(self, tmp_path):
         for seed in (1, 2):
@@ -407,6 +449,7 @@ class TestAggregate:
             for power, duration in ((None, None), (10, 1)):
                 cfg = SweepConfig(power, duration, seed)
                 metrics = {k: 1.0 for k in CSV_METRICS}
+                metrics["mean_hourly_price"] = [1.0] * 4
                 if power is None:
                     for k in CSV_METRICS:
                         if k.startswith("bess_"):
@@ -422,6 +465,8 @@ class TestAggregate:
         text = Path(report).read_text()
         assert "Pretraining" in text
         assert "Paired effects" in text
+        assert "no battery = 100" in text
+        assert "Unserved" not in text
 
 
 class TestDispatchRecording:

@@ -72,6 +72,15 @@ def load_dispatch(out_dir, config_id: str) -> Dict[str, np.ndarray]:
         return {key: data[key] for key in data.files}
 
 
+def generator_capacity(out_dir) -> np.ndarray:
+    """Generator capacities in MW, read from the first recorded dispatch."""
+    path = next(iter(sorted(Path(out_dir).glob("*/dispatch.npz"))), None)
+    if path is None:
+        raise FileNotFoundError(f"No dispatch.npz under {out_dir}; run `bess_experiment replay` first.")
+    with np.load(path) as data:
+        return data["generator_capacity"].astype(np.float64)
+
+
 def _hourly_dispatch(dispatch: Dict[str, np.ndarray]) -> Dict[str, Optional[np.ndarray]]:
     """Episode-averaged hourly generator output, battery flows and price of one config."""
     n_generators = len(dispatch["generator_cost"])
@@ -147,7 +156,7 @@ def generation_change_by_hour(out_dir, arm: str) -> Dict[Tuple[float, float], np
 
 
 def effect_grid(effects: List[Dict], arm: str, metric: str):
-    """Mean paired difference and significance on the power x duration grid."""
+    """Mean paired difference (percent of the no-battery mean) and significance on the power x duration grid."""
     if metric not in DELTA_METRICS:
         raise ValueError(f"Unknown metric {metric!r}, expected one of {DELTA_METRICS}.")
     cells = {
@@ -161,7 +170,7 @@ def effect_grid(effects: List[Dict], arm: str, metric: str):
     significant = np.zeros((len(powers), len(durations)), dtype=bool)
     for (power, duration), e in cells.items():
         i, j = powers.index(power), durations.index(duration)
-        means[i, j] = e["mean_delta"]
+        means[i, j] = e["mean_delta_pct"]
         significant[i, j] = e["significant"]
     return powers, durations, means, significant
 
@@ -181,6 +190,10 @@ def _hours_mean(values: np.ndarray, hours: np.ndarray) -> float:
     return float(np.take_along_axis(values, hours, axis=1).mean())
 
 
+def _pct(delta: float, baseline: float) -> float:
+    return 100.0 * delta / abs(baseline) if baseline else float("nan")
+
+
 def pair_metrics(base: Dict[str, np.ndarray], battery: Dict[str, np.ndarray], power_mw: float, duration_h: float) -> Dict[str, np.ndarray]:
     """What the battery changed for one seed, from the two recorded dispatches (same demand episodes)."""
     n_gen = len(base["generator_cost"])
@@ -194,6 +207,7 @@ def pair_metrics(base: Dict[str, np.ndarray], battery: Dict[str, np.ndarray], po
     discharge = battery["bess_discharge"].astype(np.float64)
     net = discharge - charge
     energy = power_mw * duration_h
+    hours = price_b.shape[1]
 
     gen_profit_b = ((price_b[:, :, None] - cost) * q_b).sum(axis=1)
     gen_profit_x = ((price_x[:, :, None] - cost) * q_x).sum(axis=1)
@@ -208,8 +222,19 @@ def pair_metrics(base: Dict[str, np.ndarray], battery: Dict[str, np.ndarray], po
 
     delta_consumer = float((consumer_x - consumer_b).mean())
     delta_gen_profit = float((gen_profit_x - gen_profit_b).sum(axis=1).mean())
+    baseline_price = float(price_b.mean())
+    full_power_day = power_mw * hours * baseline_price
+    base_peak_price = _hours_mean(price_b, peak)
+    base_offpeak_price = _hours_mean(price_b, off_peak)
+    base_peak_demand = float(demand.max(axis=1).mean())
     return {
         "baseline_consumer_cost": float(consumer_b.mean()),
+        "baseline_mean_price": baseline_price,
+        "baseline_generator_profit": float(gen_profit_b.sum(axis=1).mean()),
+        "baseline_generator_profit_by_plant": gen_profit_b.mean(axis=0),
+        "profit_per_mw_pct": _pct(float(daily_profit.mean()), full_power_day),
+        "profit_per_mwh_pct": _pct(float(daily_profit.mean()), energy * baseline_price),
+        "daily_profit_per_mw_pct": 100.0 * daily_profit / full_power_day if full_power_day else np.full_like(daily_profit, np.nan),
         "battery_profit": float(daily_profit.mean()),
         "battery_profit_at_baseline_prices": profit_at_baseline,
         "cannibalisation": profit_at_baseline - float(daily_profit.mean()),
@@ -220,10 +245,10 @@ def pair_metrics(base: Dict[str, np.ndarray], battery: Dict[str, np.ndarray], po
         "delta_generator_profit_by_plant": (gen_profit_x - gen_profit_b).mean(axis=0),
         "delta_generation_cost": float(delta_cost),
         "welfare_residual": delta_consumer - delta_gen_profit - float(delta_cost) - float(daily_profit.mean()),
-        "delta_peak_price": _hours_mean(price_x, peak) - _hours_mean(price_b, peak),
-        "delta_offpeak_price": _hours_mean(price_x, off_peak) - _hours_mean(price_b, off_peak),
+        "delta_peak_price_pct": _pct(_hours_mean(price_x, peak) - base_peak_price, base_peak_price),
+        "delta_offpeak_price_pct": _pct(_hours_mean(price_x, off_peak) - base_offpeak_price, base_offpeak_price),
         "delta_scarcity_pp": 100.0 * float((price_x >= threshold).mean() - (price_b >= threshold).mean()),
-        "peak_shaving_mw": float(demand.max(axis=1).mean() - (demand - net).max(axis=1).mean()),
+        "peak_shaving_pct": _pct(base_peak_demand - float((demand - net).max(axis=1).mean()), base_peak_demand),
         "utilisation": float(((charge + discharge) > 1e-6).mean()),
         "net_frac_by_hour": net.mean(axis=0) / power_mw,
         "soc_frac_by_hour": battery["soc"].astype(np.float64).mean(axis=0) / energy,
@@ -287,7 +312,7 @@ def _price_effect(effects: List[Dict], arm: str, power: float, duration: float) 
 
 
 def summary_table(arm: str, effects: List[Dict], metrics: Dict, rows: List[Dict]) -> List[Dict]:
-    """One row per battery config: the headline numbers for traders and policy makers."""
+    """One row per battery config, every quantity relative: the headline numbers for traders and policy makers."""
     table = []
     for (power, duration), m in metrics.items():
         price = _price_effect(effects, arm, power, duration)
@@ -296,60 +321,56 @@ def summary_table(arm: str, effects: List[Dict], metrics: Dict, rows: List[Dict]
             for r in rows
             if (r["arm"], r["power_mw"], r["duration_h"]) == (arm, power, duration)
         ]
-        profit = float(m["battery_profit"].mean())
         at_baseline = float(m["battery_profit_at_baseline_prices"].mean())
-        consumer = float(m["delta_consumer_cost"].mean())
         table.append(
             {
                 "power_mw": power,
                 "duration_h": duration,
-                "mean_price_delta": price["mean_delta"],
-                "mean_price_ci": (price["ci_low"], price["ci_high"]),
-                "consumer_cost_delta": consumer,
-                "consumer_cost_pct": 100.0 * consumer / float(m["baseline_consumer_cost"].mean()),
+                "mean_price_pct": price["mean_delta_pct"],
+                "mean_price_ci_pct": (price["ci_low_pct"], price["ci_high_pct"]),
+                "consumer_cost_pct": _pct(float(m["delta_consumer_cost"].mean()), float(m["baseline_consumer_cost"].mean())),
                 "seeds_lower_cost": f"{int((m['delta_consumer_cost'] < 0).sum())}/{len(m['delta_consumer_cost'])}",
-                "generator_profit_delta": float(m["delta_generator_profit"].mean()),
-                "battery_profit": profit,
-                "profit_per_mw": profit / power,
-                "profit_per_mwh": profit / (power * duration),
+                "generator_profit_pct": _pct(float(m["delta_generator_profit"].mean()), float(m["baseline_generator_profit"].mean())),
+                "profit_per_mw_pct": float(m["profit_per_mw_pct"].mean()),
+                "profit_per_mwh_pct": float(m["profit_per_mwh_pct"].mean()),
                 "cycles": float(np.mean(cycles)) if cycles else float("nan"),
                 "utilisation_pct": 100.0 * float(m["utilisation"].mean()),
                 "cannibalisation_pct": 100.0 * float(m["cannibalisation"].mean()) / at_baseline if at_baseline else float("nan"),
                 "loss_day_pct": 100.0 * float(m["loss_day_share"].mean()),
-                "peak_price_delta": float(m["delta_peak_price"].mean()),
-                "offpeak_price_delta": float(m["delta_offpeak_price"].mean()),
+                "peak_price_pct": float(m["delta_peak_price_pct"].mean()),
+                "offpeak_price_pct": float(m["delta_offpeak_price_pct"].mean()),
                 "scarcity_pp": float(m["delta_scarcity_pp"].mean()),
-                "peak_shaving_mw": float(m["peak_shaving_mw"].mean()),
+                "peak_shaving_pct": float(m["peak_shaving_pct"].mean()),
             }
         )
     return table
 
 
 def key_findings(arm: str, effects: List[Dict], metrics: Dict) -> List[str]:
-    """Plain-language headlines, every number taken from the table the dashboard also shows."""
+    """Plain-language headlines in relative terms, every number taken from the table the dashboard also shows."""
     table = summary_table(arm, effects, metrics, rows=[])  # cycles unused here
     label = lambda r: f"{r['power_mw']:g} MW / {r['duration_h']:g} h"  # noqa: E731
     largest = max(table, key=lambda r: (r["power_mw"], r["duration_h"]))
-    low, high = largest["mean_price_ci"]
+    low, high = largest["mean_price_ci_pct"]
     findings = [
-        f"Largest battery ({label(largest)}): mean price {largest['mean_price_delta']:+.2f} "
-        f"(95% CI {low:+.2f} to {high:+.2f}), consumer cost {largest['consumer_cost_delta']:+,.0f}/day "
-        f"({largest['consumer_cost_pct']:+.1f}%), generator profit {largest['generator_profit_delta']:+,.0f}/day, "
-        f"battery profit {largest['battery_profit']:+,.0f}/day."
+        f"Largest battery ({label(largest)}): mean price {largest['mean_price_pct']:+.1f}% "
+        f"(95% CI {low:+.1f}% to {high:+.1f}%), consumer cost {largest['consumer_cost_pct']:+.1f}%, "
+        f"generator profit {largest['generator_profit_pct']:+.1f}%, "
+        f"battery profit per MW {largest['profit_per_mw_pct']:.2f}% of a full-power day at the no-battery mean price."
     ]
-    best = max(table, key=lambda r: r["profit_per_mw"])
-    worst = min(table, key=lambda r: r["profit_per_mw"])
+    best = max(table, key=lambda r: r["profit_per_mw_pct"])
+    worst = min(table, key=lambda r: r["profit_per_mw_pct"])
     findings.append(
-        f"Revenue per MW is highest for {label(best)} ({best['profit_per_mw']:,.1f}/MW/day) "
-        f"and lowest for {label(worst)} ({worst['profit_per_mw']:,.1f}/MW/day)."
+        f"Revenue per MW is highest for {label(best)} ({best['profit_per_mw_pct']:.2f}%) "
+        f"and lowest for {label(worst)} ({worst['profit_per_mw_pct']:.2f}%)."
     )
     cannibal = max(table, key=lambda r: r["cannibalisation_pct"])
     findings.append(
         f"Price impact eats into revenue: {label(cannibal)} keeps {100 - cannibal['cannibalisation_pct']:.0f}% "
         f"of what it would earn as a price taker ({cannibal['cannibalisation_pct']:.0f}% cannibalised)."
     )
-    lowers_peak = sum(r["peak_price_delta"] < 0 for r in table)
-    raises_residual_peak = sum(r["peak_shaving_mw"] < 0 for r in table)
+    lowers_peak = sum(r["peak_price_pct"] < 0 for r in table)
+    raises_residual_peak = sum(r["peak_shaving_pct"] < 0 for r in table)
     findings.append(
         f"Peak-hour price falls in {lowers_peak} of {len(table)} configs; the residual-load peak rises in "
         f"{raises_residual_peak} (the battery charges into the demand peak)."

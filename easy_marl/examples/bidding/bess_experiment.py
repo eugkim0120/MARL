@@ -478,7 +478,7 @@ PLOT_METRICS = [
     ("daily_spread_mean", "Daily max-min price spread"),
     ("consumer_cost_mean", "Consumer cost per day"),
     ("generator_profit_total_mean", "Total generator profit per day"),
-    ("bess_profit_mean", "Battery profit per day"),
+    ("bess_profit_mean", "Battery profit per MW per day"),
 ]
 EFFECT_COLUMNS = [
     ("mean_price", "Mean price"),
@@ -486,8 +486,10 @@ EFFECT_COLUMNS = [
     ("daily_spread_mean", "Daily spread"),
     ("consumer_cost_mean", "Consumer cost"),
     ("generator_profit_total_mean", "Gen profit"),
-    ("loss_of_load_mwh_mean", "Unserved MWh"),
 ]
+# Reported as an index with the arm's no-battery mean = 100; the simulator's price units mean nothing outside it.
+INDEX_METRICS = [key for key, _ in EFFECT_COLUMNS]
+YIELD_LABEL = "% of a full-power day at the no-battery mean price"
 
 
 def load_results(out_dir) -> List[Dict]:
@@ -496,10 +498,47 @@ def load_results(out_dir) -> List[Dict]:
         result = json.loads(path.read_text())
         row = {"config_id": path.parent.name, **result["config"]}
         row.update({k: result["metrics"][k] for k in CSV_METRICS})
+        row["hours"] = len(result["metrics"]["mean_hourly_price"])
         rows.append(row)
     if not rows:
         raise FileNotFoundError(f"No */metrics.json under {out_dir}")
     return rows
+
+
+def battery_yield_pct(rows: List[Dict]) -> Dict[str, float]:
+    """Battery profit per MW per day as % of what 1 MW sold flat all day earns at the same seed's no-battery mean price."""
+    baselines = {(r["arm"], r["seed"]): r for r in rows if r["power_mw"] is None}
+    yields = {}
+    for r in rows:
+        if r["power_mw"] is None:
+            continue
+        base = baselines.get((r["arm"], r["seed"]))
+        if base is None:
+            raise ValueError(f"No baseline for {r['config_id']} (arm {r['arm']!r}, seed {r['seed']}).")
+        yields[r["config_id"]] = 100.0 * r["bess_profit_mean"] / (r["power_mw"] * r["hours"] * base["mean_price"])
+    return yields
+
+
+def relative_rows(rows: List[Dict]) -> List[Dict]:
+    """Rows with market metrics as an index (arm's no-battery mean = 100) and battery profit as yield per MW."""
+    yields = battery_yield_pct(rows)
+    base_means = {}
+    for arm in {r["arm"] for r in rows}:
+        baseline = [r for r in rows if r["arm"] == arm and r["power_mw"] is None]
+        for key in INDEX_METRICS:
+            mean = float(np.mean([r[key] for r in baseline])) if baseline else 0.0
+            if mean == 0.0:
+                raise ValueError(f"Cannot express {key!r} relatively: arm {arm!r} has a zero or missing no-battery mean.")
+            base_means[(arm, key)] = mean
+    relative = []
+    for r in rows:
+        row = dict(r)
+        for key in INDEX_METRICS:
+            row[key] = 100.0 * r[key] / base_means[(r["arm"], key)]
+        if r["power_mw"] is not None:
+            row["bess_profit_mean"] = yields[r["config_id"]]
+        relative.append(row)
+    return relative
 
 
 def load_convergence(out_dir) -> Dict[int, Dict]:
@@ -544,10 +583,13 @@ def paired_effects(rows: List[Dict], exclude_flagged: bool = False) -> List[Dict
     for (arm, power, duration), pairs in sorted(groups.items()):
         for metric in DELTA_METRICS:
             deltas = [r[metric] - base[metric] for r, base in pairs]
+            baseline_mean = float(np.mean([base[metric] for _, base in pairs]))
             if len(deltas) > 1:
                 low, high = bootstrap_ci(deltas)
             else:
                 low = high = float("nan")
+            # A zero baseline has no relative change; NaN says so instead of inventing a scale.
+            scale = 100.0 / abs(baseline_mean) if baseline_mean else float("nan")
             effects.append(
                 {
                     "arm": arm,
@@ -558,6 +600,10 @@ def paired_effects(rows: List[Dict], exclude_flagged: bool = False) -> List[Dict
                     "mean_delta": float(np.mean(deltas)),
                     "ci_low": low,
                     "ci_high": high,
+                    "baseline_mean": baseline_mean,
+                    "mean_delta_pct": float(np.mean(deltas)) * scale,
+                    "ci_low_pct": low * scale,
+                    "ci_high_pct": high * scale,
                     "significant": bool(low > 0 or high < 0),
                     "excluding_flagged": exclude_flagged,
                 }
@@ -582,7 +628,7 @@ def plot_results(rows: List[Dict], out_dir: Path, arm: str) -> List[Path]:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    rows = [r for r in rows if r["arm"] == arm]
+    rows = [r for r in relative_rows(rows) if r["arm"] == arm]
     baseline = [r for r in rows if r["power_mw"] is None]
     battery = [r for r in rows if r["power_mw"] is not None]
     powers = sorted({r["power_mw"] for r in battery})
@@ -608,7 +654,7 @@ def plot_results(rows: List[Dict], out_dir: Path, arm: str) -> List[Path]:
                 stds.append(0.0 if s is None else s)
             ax.errorbar(powers, means, yerr=stds, marker="o", capsize=3, label=f"{duration:g} h")
         ax.set_xlabel("Battery power (MW)")
-        ax.set_ylabel(label)
+        ax.set_ylabel(YIELD_LABEL if key == "bess_profit_mean" else "Index (no battery = 100)")
         ax.set_title(f"{label} ({arm})")
         ax.legend(title="Duration")
         fig.tight_layout()
@@ -642,14 +688,14 @@ def plot_effects(effects: List[Dict], out_dir: Path, arm: str) -> List[Path]:
                 if e["metric"] == key and e["duration_h"] == duration
             }
             xs = [p for p in powers if p in points]
-            means = np.array([points[p]["mean_delta"] for p in xs])
-            lows = np.nan_to_num(means - np.array([points[p]["ci_low"] for p in xs]))
-            highs = np.nan_to_num(np.array([points[p]["ci_high"] for p in xs]) - means)
+            means = np.array([points[p]["mean_delta_pct"] for p in xs])
+            lows = np.nan_to_num(means - np.array([points[p]["ci_low_pct"] for p in xs]))
+            highs = np.nan_to_num(np.array([points[p]["ci_high_pct"] for p in xs]) - means)
             ax.errorbar(
                 xs, means, yerr=[lows, highs], marker="o", capsize=3, label=f"{duration:g} h"
             )
         ax.set_xlabel("Battery power (MW)")
-        ax.set_ylabel(f"Change in {label.lower()}")
+        ax.set_ylabel(f"Change in {label.lower()} (% of no battery)")
         ax.set_title(f"Paired change vs no battery ({arm}), 95% CI")
         ax.legend(title="Duration")
         fig.tight_layout()
@@ -660,7 +706,7 @@ def plot_effects(effects: List[Dict], out_dir: Path, arm: str) -> List[Path]:
     return paths
 
 
-def _absolute_table(rows: List[Dict]) -> List[str]:
+def _relative_table(rows: List[Dict]) -> List[str]:
     groups = {}
     for r in rows:
         groups.setdefault((r["power_mw"], r["duration_h"]), []).append(r)
@@ -669,10 +715,9 @@ def _absolute_table(rows: List[Dict]) -> List[str]:
         (power, duration), _ = item
         return (power is not None, power or 0, duration or 0)
 
-    columns = EFFECT_COLUMNS[:5] + [
-        ("bess_profit_mean", "BESS profit"),
+    columns = EFFECT_COLUMNS + [
+        ("bess_profit_mean", "BESS profit per MW (%)"),
         ("bess_equivalent_cycles_mean", "BESS cycles"),
-        ("loss_of_load_mwh_mean", "Unserved MWh"),
     ]
     lines = [
         "| Power (MW) | Duration (h) | Seeds | " + " | ".join(c[1] for c in columns) + " |",
@@ -708,9 +753,9 @@ def _effects_table(effects: List[Dict]) -> List[str]:
         cells = []
         for key, _ in EFFECT_COLUMNS:
             e = by_metric[key]
-            cell = f"{e['mean_delta']:+.2f}"
-            if not np.isnan(e["ci_low"]):
-                cell += f" [{e['ci_low']:+.2f}, {e['ci_high']:+.2f}]"
+            cell = f"{e['mean_delta_pct']:+.2f}%"
+            if not np.isnan(e["ci_low_pct"]):
+                cell += f" [{e['ci_low_pct']:+.2f}, {e['ci_high_pct']:+.2f}]"
             cells.append(cell + (" *" if e["significant"] else ""))
         n = next(iter(by_metric.values()))["n"]
         lines.append(f"| {power:g} | {duration:g} | {n} | " + " | ".join(cells) + " |")
@@ -725,7 +770,16 @@ def write_report(
     effects_clean: List[Dict],
     convergence: Dict[int, Dict],
 ) -> Path:
-    lines = ["# BESS sweep results", ""]
+    rows = relative_rows(rows)
+    lines = [
+        "# BESS sweep results",
+        "",
+        "Everything is relative. Market metrics are an index with the same arm's no-battery mean "
+        "set to 100; effects are percent of that mean. Battery profit is per MW installed, as a "
+        "yield: the percent of what 1 MW sold flat all day would earn at the no-battery mean price. "
+        "Absolute values stay in results.csv and paired_effects.csv.",
+        "",
+    ]
 
     if convergence:
         lines += [
@@ -753,15 +807,15 @@ def write_report(
         lines += [
             f"## Arm: {arm}",
             "",
-            "Mean over seeds (± std across seeds). Per-config values are averages over the "
-            "evaluation demand episodes.",
+            "Index (no battery = 100), mean over seeds (± std across seeds). Per-config values "
+            "are averages over the evaluation demand episodes. Loss-of-load figures are in results.csv.",
             "",
-            *_absolute_table(arm_rows),
+            *_relative_table(arm_rows),
             "",
             "### Paired effects (battery minus same-seed baseline)",
             "",
-            "Mean difference with a 95% bootstrap interval across seeds; * marks an interval "
-            "that excludes zero.",
+            "Mean difference as percent of the no-battery mean, with a 95% bootstrap interval "
+            "across seeds; * marks an interval that excludes zero.",
             "",
             *_effects_table([e for e in effects if e["arm"] == arm]),
             "",

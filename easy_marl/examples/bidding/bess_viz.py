@@ -23,6 +23,7 @@ from easy_marl.examples.bidding.bess_analysis import (
     effect_grid,
     generation_by_hour,
     generation_change_by_hour,
+    generator_capacity,
     hourly_deltas,
     key_findings,
     metric_grid,
@@ -31,6 +32,7 @@ from easy_marl.examples.bidding.bess_analysis import (
 )
 from easy_marl.examples.bidding.bess_experiment import (
     MIN_USEFUL_CYCLES,
+    YIELD_LABEL,
     bootstrap_ci,
     load_convergence,
     load_results,
@@ -38,11 +40,11 @@ from easy_marl.examples.bidding.bess_experiment import (
 )
 
 HEATMAP_METRICS = [
-    ("mean_price", "Mean price"),
-    ("price_std", "Price std"),
-    ("daily_spread_mean", "Daily spread"),
-    ("consumer_cost_mean", "Consumer cost / day"),
-    ("generator_profit_total_mean", "Generator profit / day"),
+    ("mean_price", "Mean price (%)"),
+    ("price_std", "Price std (%)"),
+    ("daily_spread_mean", "Daily spread (%)"),
+    ("consumer_cost_mean", "Consumer cost (%)"),
+    ("generator_profit_total_mean", "Generator profit (%)"),
 ]
 STRIP_METRICS = [
     ("mean_price", "Mean price"),
@@ -64,6 +66,9 @@ def _pyplot():
 def _duration_colors(durations):
     plt = _pyplot()
     return {d: plt.cm.tab10(i % 10) for i, d in enumerate(durations)}
+
+
+PRICE_INDEX_LABEL = "Price index (no-battery mean = 100)"
 
 
 def _config_label(power, duration) -> str:
@@ -93,16 +98,18 @@ def fig_heatmaps(effects: List[Dict], arm: str):
     for ax, (metric, label) in zip(axes, HEATMAP_METRICS):
         _draw_grid(ax, *effect_grid(effects, arm, metric), label)
     axes[0].set_ylabel("Power (MW)")
-    fig.suptitle(f"Paired change vs no battery ({arm}); * = 95% CI excludes 0", fontsize=11)
+    fig.suptitle(
+        f"Paired change vs no battery, % of the no-battery mean ({arm}); * = 95% CI excludes 0", fontsize=11
+    )
     fig.tight_layout()
     return fig
 
 
 PRICE_SHAPE_METRICS = [
-    ("delta_peak_price", "Peak-hour price"),
-    ("delta_offpeak_price", "Off-peak-hour price"),
+    ("delta_peak_price_pct", "Peak-hour price (%)"),
+    ("delta_offpeak_price_pct", "Off-peak-hour price (%)"),
     ("delta_scarcity_pp", "Scarcity hours (pp of hours)"),
-    ("peak_shaving_mw", "Peak load shaved (MW)"),
+    ("peak_shaving_pct", "Peak load shaved (%)"),
 ]
 
 
@@ -135,7 +142,7 @@ def fig_per_seed(rows: List[Dict], effects: List[Dict], arm: str):
         ax.axhline(0.0, color="black", linewidth=0.8, linestyle="--")
         for x, (duration, power) in enumerate(configs):
             deltas = [
-                r[metric] - base[metric]
+                100.0 * (r[metric] - base[metric]) / abs(base[metric])
                 for r, base in pairs
                 if r["power_mw"] == power and r["duration_h"] == duration
             ]
@@ -148,7 +155,7 @@ def fig_per_seed(rows: List[Dict], effects: List[Dict], arm: str):
                 x, np.mean(deltas), yerr=[[np.mean(deltas) - low], [high - np.mean(deltas)]],
                 color="black", marker="D", markersize=4, capsize=4, linewidth=1.2,
             )
-        ax.set_ylabel(f"Change in {label.lower()}")
+        ax.set_ylabel(f"Change in {label.lower()}\n(% of no battery)")
     axes[-1].set_xticks(range(len(configs)), [_config_label(p, d) for d, p in configs], rotation=45, ha="right")
     axes[0].set_title(f"Per-seed paired differences ({arm}); diamond = mean with 95% CI", fontsize=11)
     fig.tight_layout()
@@ -162,16 +169,18 @@ def fig_hourly(out_dir, arm: str):
     powers = sorted({p for p, _ in deltas})
     base = baseline_hourly(out_dir, arm)
     hours = np.arange(len(base))
+    scale = 100.0 / base.mean()
     fig, axes = plt.subplots(1, 1 + len(durations), figsize=(3.6 * (1 + len(durations)), 3.4), sharex=True)
-    axes[0].plot(hours, base, color="black", marker="o", markersize=3)
-    axes[0].set_title("Baseline mean price by hour", fontsize=10)
-    axes[0].set_ylabel("Price")
+    axes[0].plot(hours, base * scale, color="black", marker="o", markersize=3)
+    axes[0].set_title("Baseline price by hour", fontsize=10)
+    axes[0].set_ylabel(PRICE_INDEX_LABEL)
     shades = plt.cm.viridis(np.linspace(0.1, 0.9, len(powers)))
     for ax, duration in zip(axes[1:], durations):
         ax.axhline(0.0, color="black", linewidth=0.8, linestyle="--")
         for color, power in zip(shades, powers):
-            ax.plot(hours, deltas[(power, duration)], color=color, label=f"{power:g} MW")
+            ax.plot(hours, np.asarray(deltas[(power, duration)]) * scale, color=color, label=f"{power:g} MW")
         ax.set_title(f"{duration:g} h battery: change vs baseline", fontsize=10)
+        ax.set_ylabel("Change (% of no-battery mean price)")
         ax.legend(fontsize=7)
     for ax in axes:
         ax.set_xlabel("Hour of day")
@@ -188,53 +197,65 @@ def _by_config(rows: List[Dict], arm: str, key: str):
     return groups
 
 
-def _stack(ax, hours, profile, title):
+def _stack(ax, hours, profile, title, scale):
     plt = _pyplot()
-    generators = profile["generators"]
+    generators = profile["generators"] * scale
     colors = plt.cm.Greys(np.linspace(0.35, 0.8, len(generators)))
     layers = list(generators)
     labels = [f"Generator {g}" for g in range(len(generators))]
     if profile["discharge"] is not None:
-        layers.append(profile["discharge"])
+        layers.append(profile["discharge"] * scale)
         labels.append("Battery discharge")
         colors = list(colors) + ["tab:green"]
     ax.stackplot(hours, layers, labels=labels, colors=colors)
     if profile["charge"] is not None:
-        ax.fill_between(hours, 0, -profile["charge"], color="tab:red", alpha=0.7, label="Battery charge")
+        ax.fill_between(hours, 0, -profile["charge"] * scale, color="tab:red", alpha=0.7, label="Battery charge")
     ax.set_title(title, fontsize=10)
     ax.set_xlabel("Hour of day")
-    ax.set_ylabel("MW")
+    ax.set_ylabel("% of total generator capacity")
 
 
 def fig_dispatch(out_dir, arm: str, power: float, duration: float):
     plt = _pyplot()
     profile = dispatch_profile(out_dir, arm, power, duration)
     hours = np.arange(len(profile["demand"]))
+    capacity_scale = 100.0 / generator_capacity(out_dir).sum()
+    price_scale = 100.0 / profile["baseline"]["price"].mean()
     fig, axes = plt.subplots(1, 3, figsize=(15, 3.8), sharex=True)
-    _stack(axes[0], hours, profile["baseline"], "No battery")
-    _stack(axes[1], hours, profile["battery"], f"With {_config_label(power, duration)} battery")
+    _stack(axes[0], hours, profile["baseline"], "No battery", capacity_scale)
+    _stack(axes[1], hours, profile["battery"], f"With {_config_label(power, duration)} battery", capacity_scale)
     for ax in axes[:2]:
-        ax.plot(hours, profile["demand"], color="tab:blue", linestyle="--", label="Demand")
+        ax.plot(hours, profile["demand"] * capacity_scale, color="tab:blue", linestyle="--", label="Demand")
     axes[1].legend(fontsize=7, loc="upper left", ncol=2)
-    axes[2].plot(hours, profile["baseline"]["price"], color="black", label="No battery")
-    axes[2].plot(hours, profile["battery"]["price"], color="tab:green", label="With battery")
+    axes[2].plot(hours, profile["baseline"]["price"] * price_scale, color="black", label="No battery")
+    axes[2].plot(hours, profile["battery"]["price"] * price_scale, color="tab:green", label="With battery")
     axes[2].set_title("Market price", fontsize=10)
     axes[2].set_xlabel("Hour of day")
-    axes[2].set_ylabel("Price")
+    axes[2].set_ylabel(PRICE_INDEX_LABEL)
     axes[2].legend(fontsize=7)
     fig.suptitle(f"Hourly dispatch, {_config_label(power, duration)} ({arm}), mean over seeds and episodes", fontsize=11)
     fig.tight_layout()
     return fig
 
 
+UNIT_NOTE = {False: "% of capacity", True: "% of rated power"}
+
+
 def _plant_names(n_units: int) -> List[str]:
     return [f"Generator {g}" for g in range(n_units - 1)] + ["Battery (net output)"]
 
 
+def _percent_of_rating(rows: np.ndarray, capacity: np.ndarray, power: Optional[float]) -> np.ndarray:
+    """Plant rows as percent of capacity; the last row (the battery) as percent of its rated power."""
+    ratings = np.append(capacity, power if power is not None else 1.0)
+    return 100.0 * rows / ratings[:, None]
+
+
 def fig_generation_levels(out_dir, arm: str):
     plt = _pyplot()
+    capacity = generator_capacity(out_dir)
     levels = generation_by_hour(out_dir, arm)
-    baseline = levels.pop("baseline")
+    baseline = _percent_of_rating(levels.pop("baseline"), capacity, None)
     durations = sorted({d for _, d in levels})
     powers = sorted({p for p, _ in levels})
     n_units = baseline.shape[0]
@@ -249,21 +270,25 @@ def fig_generation_levels(out_dir, arm: str):
             ax = axes[u, k]
             ax.plot(baseline[u], color="black", linestyle="--", linewidth=1.4, label="No battery")
             for color, power in zip(shades, powers):
-                ax.plot(levels[(power, duration)][u], color=color, label=f"{power:g} MW")
+                ax.plot(
+                    _percent_of_rating(levels[(power, duration)], capacity, power)[u],
+                    color=color, label=f"{power:g} MW",
+                )
             if u == 0:
                 ax.set_title(f"{duration:g} h battery", fontsize=10)
             if k == 0:
-                ax.set_ylabel(f"{names[u]}\n(MW)", fontsize=8)
+                ax.set_ylabel(f"{names[u]}\n({UNIT_NOTE[u == n_units - 1]})", fontsize=8)
             if u == n_units - 1:
                 ax.set_xlabel("Hour of day")
     axes[0, 0].legend(fontsize=7)
-    fig.suptitle(f"Hourly generation of each plant ({arm}), mean over seeds", fontsize=11)
+    fig.suptitle(f"Hourly generation of each plant, % of its capacity ({arm}), mean over seeds", fontsize=11)
     fig.tight_layout()
     return fig
 
 
 def fig_generation_change(out_dir, arm: str):
     plt = _pyplot()
+    capacity = generator_capacity(out_dir)
     change = generation_change_by_hour(out_dir, arm)
     durations = sorted({d for _, d in change})
     powers = sorted({p for p, _ in change})
@@ -279,15 +304,18 @@ def fig_generation_change(out_dir, arm: str):
             ax = axes[u, k]
             ax.axhline(0.0, color="black", linewidth=0.8, linestyle="--")
             for color, power in zip(shades, powers):
-                ax.plot(change[(power, duration)][u], color=color, label=f"{power:g} MW")
+                ax.plot(
+                    _percent_of_rating(change[(power, duration)], capacity, power)[u],
+                    color=color, label=f"{power:g} MW",
+                )
             if u == 0:
                 ax.set_title(f"{duration:g} h battery", fontsize=10)
             if k == 0:
-                ax.set_ylabel(f"{names[u]}\nchange (MW)", fontsize=8)
+                ax.set_ylabel(f"{names[u]}\nchange ({UNIT_NOTE[u == n_units - 1]})", fontsize=8)
             if u == n_units - 1:
                 ax.set_xlabel("Hour of day")
     axes[0, 0].legend(fontsize=7)
-    fig.suptitle(f"Change in hourly generation vs no battery ({arm})", fontsize=11)
+    fig.suptitle(f"Change in hourly generation vs no battery, % of capacity ({arm})", fontsize=11)
     fig.tight_layout()
     return fig
 
@@ -300,8 +328,12 @@ def _seed_mean(metrics: Dict, key, name: str) -> float:
     return float(np.mean(metrics[key][name]))
 
 
+def _percent_of_bill(metrics: Dict, key, name: str) -> float:
+    return 100.0 * _seed_mean(metrics, key, name) / _seed_mean(metrics, key, "baseline_consumer_cost")
+
+
 def fig_welfare(metrics: Dict, arm: str):
-    """Decompose the change in consumer cost into who gains and who pays, per day."""
+    """Decompose the change in consumer cost into who gains and who pays, as % of the no-battery bill."""
     plt = _pyplot()
     configs = _config_order(metrics)
     components = [
@@ -315,16 +347,16 @@ def fig_welfare(metrics: Dict, arm: str):
     positive = np.zeros(len(configs))
     negative = np.zeros(len(configs))
     for name, label, color in components:
-        values = np.array([_seed_mean(metrics, key, name) for key in configs])
+        values = np.array([_percent_of_bill(metrics, key, name) for key in configs])
         bottom = np.where(values >= 0, positive, negative)
         ax.bar(x, values, bottom=bottom, color=color, label=label)
         positive += np.where(values >= 0, values, 0.0)
         negative += np.where(values < 0, values, 0.0)
-    totals = np.array([_seed_mean(metrics, key, "delta_consumer_cost") for key in configs])
+    totals = np.array([_percent_of_bill(metrics, key, "delta_consumer_cost") for key in configs])
     ax.scatter(x, totals, color="black", marker="D", zorder=5, label="Change in consumer cost")
     ax.axhline(0.0, color="black", linewidth=0.8)
     ax.set_xticks(x, [_config_label(*key) for key in configs], rotation=45, ha="right")
-    ax.set_ylabel("Change per day vs no battery")
+    ax.set_ylabel("Change vs no battery, % of no-battery bill")
     ax.set_title(
         f"Who gains and who pays ({arm})\nconsumer cost change = generator profit + generation cost "
         "+ battery profit + other", fontsize=9,
@@ -346,11 +378,11 @@ def fig_consumer_value(metrics: Dict, arm: str):
             -100.0 * _seed_mean(metrics, k, "delta_consumer_cost") / _seed_mean(metrics, k, "baseline_consumer_cost")
             for k in keys
         ]
-        saving_per_mw = [-_seed_mean(metrics, k, "delta_consumer_cost") / k[0] for k in keys]
+        saving_per_mw = [-_percent_of_bill(metrics, k, "delta_consumer_cost") / k[0] for k in keys]
         axes[0].plot(powers, saving_pct, marker="o", color=colors[duration], label=f"{duration:g} h")
         axes[1].plot(powers, saving_per_mw, marker="o", color=colors[duration], label=f"{duration:g} h")
     axes[0].set_ylabel("Saved (% of no-battery bill)")
-    axes[1].set_ylabel("Saved per MW per day")
+    axes[1].set_ylabel("Saved per MW (% of no-battery bill per MW)")
     for ax in axes:
         ax.axhline(0.0, color="black", linewidth=0.8, linestyle="--")
         ax.set_xlabel("Battery power (MW)")
@@ -367,18 +399,19 @@ def fig_price_duration(metrics: Dict, arm: str):
     shades = plt.cm.viridis(np.linspace(0.1, 0.9, len(powers)))
     fig, axes = plt.subplots(2, len(durations), figsize=(3.6 * len(durations), 6.2), sharex=True, squeeze=False)
     percentiles = np.linspace(0, 100, next(iter(metrics.values()))["pdc_base"].shape[1])
-    base = next(iter(metrics.values()))["pdc_base"].mean(axis=0)
+    scale = 100.0 / next(iter(metrics.values()))["baseline_mean_price"].mean()
+    base = next(iter(metrics.values()))["pdc_base"].mean(axis=0) * scale
     for k, duration in enumerate(durations):
         axes[0, k].plot(percentiles, base, color="black", linestyle="--", label="No battery")
         axes[1, k].axhline(0.0, color="black", linewidth=0.8, linestyle="--")
         for color, power in zip(shades, powers):
-            curve = metrics[(power, duration)]["pdc_battery"].mean(axis=0)
+            curve = metrics[(power, duration)]["pdc_battery"].mean(axis=0) * scale
             axes[0, k].plot(percentiles, curve, color=color, label=f"{power:g} MW")
-            axes[1, k].plot(percentiles, curve - metrics[(power, duration)]["pdc_base"].mean(axis=0), color=color)
+            axes[1, k].plot(percentiles, curve - metrics[(power, duration)]["pdc_base"].mean(axis=0) * scale, color=color)
         axes[0, k].set_title(f"{duration:g} h battery", fontsize=10)
         axes[1, k].set_xlabel("Price percentile (hours sorted cheap to dear)")
-    axes[0, 0].set_ylabel("Price")
-    axes[1, 0].set_ylabel("Change in price vs no battery")
+    axes[0, 0].set_ylabel(PRICE_INDEX_LABEL)
+    axes[1, 0].set_ylabel("Change vs no battery (% of mean price)")
     axes[0, 0].legend(fontsize=7)
     fig.suptitle(f"Price distribution ({arm}): does the battery cut the expensive tail or fill the cheap one?", fontsize=10)
     fig.tight_layout()
@@ -396,11 +429,15 @@ def fig_profit_by_plant(metrics: Dict, arm: str):
     for g in range(n_gen):
         ax.bar(
             np.arange(len(configs)) + (g - (n_gen - 1) / 2) * width,
-            [metrics[key]["delta_generator_profit_by_plant"][:, g].mean() for key in configs],
+            [
+                100.0 * metrics[key]["delta_generator_profit_by_plant"][:, g].mean()
+                / metrics[key]["baseline_generator_profit_by_plant"][:, g].mean()
+                for key in configs
+            ],
             width, color=colors[g], label=f"Generator {g}",
         )
     ax.set_xticks(range(len(configs)), [_config_label(*key) for key in configs], rotation=45, ha="right")
-    ax.set_ylabel("Change in profit per day")
+    ax.set_ylabel("Change in profit (% of the plant's no-battery profit)")
     ax.legend(fontsize=7)
     ax.set_title(f"Which generators lose margin ({arm})", fontsize=11)
     fig.tight_layout()
@@ -416,21 +453,25 @@ def fig_trader_returns(metrics: Dict, arm: str):
         powers = sorted(p for p, d in metrics if d == duration)
         keys = [(p, duration) for p in powers]
         series = [
-            ([_seed_mean(metrics, k, "battery_profit") / k[0] for k in keys],
-             [np.std(metrics[k]["battery_profit"]) / k[0] for k in keys]),
-            ([_seed_mean(metrics, k, "battery_profit") / (k[0] * k[1]) for k in keys],
-             [np.std(metrics[k]["battery_profit"]) / (k[0] * k[1]) for k in keys]),
+            ([_seed_mean(metrics, k, "profit_per_mw_pct") for k in keys],
+             [np.std(metrics[k]["profit_per_mw_pct"]) for k in keys]),
+            ([_seed_mean(metrics, k, "profit_per_mwh_pct") for k in keys],
+             [np.std(metrics[k]["profit_per_mwh_pct"]) for k in keys]),
             ([100 * _seed_mean(metrics, k, "cannibalisation") / _seed_mean(metrics, k, "battery_profit_at_baseline_prices")
               for k in keys], None),
         ]
         for ax, (values, spread) in zip(axes, series):
             ax.errorbar(powers, values, yerr=spread, marker="o", capsize=3, color=colors[duration], label=f"{duration:g} h")
-    for ax, label in zip(axes, ("Profit per MW per day", "Profit per MWh of capacity per day", "Revenue lost to own price impact (%)")):
+    for ax, label in zip(axes, ("Profit per MW (% yield)", "Profit per MWh of capacity (% yield)", "Revenue lost to own price impact (%)")):
         ax.set_xlabel("Battery power (MW)")
         ax.set_ylabel(label)
         ax.legend(title="Duration", fontsize=7)
     axes[2].set_ylim(bottom=0)
-    fig.suptitle(f"Returns on capacity ({arm}); error bars = std across seeds", fontsize=10)
+    fig.suptitle(
+        f"Returns on capacity ({arm}); yield = % of what the same capacity earns selling flat all day at the "
+        "no-battery mean price; error bars = std across seeds",
+        fontsize=9,
+    )
     fig.tight_layout()
     return fig
 
@@ -446,8 +487,9 @@ def fig_schedule(out_dir, metrics: Dict, arm: str):
         3, 1, figsize=(10, 2.4 + 0.32 * len(configs) * 2), sharex=True,
         gridspec_kw={"height_ratios": [2.2, len(configs), len(configs)]},
     )
-    axes[0].plot(hours, baseline_hourly(out_dir, arm), color="black", marker="o", markersize=3)
-    axes[0].set_ylabel("No-battery\nprice")
+    base_price = baseline_hourly(out_dir, arm)
+    axes[0].plot(hours, 100.0 * base_price / base_price.mean(), color="black", marker="o", markersize=3)
+    axes[0].set_ylabel("No-battery\nprice index")
     extent = (-0.5, len(hours) - 0.5, -0.5, len(configs) - 0.5)
     image = axes[1].imshow(net, cmap="RdBu", vmin=-1, vmax=1, aspect="auto", origin="lower", extent=extent)
     axes[1].set_title("Net output as a fraction of rated power (red = discharging, blue = charging)", fontsize=9)
@@ -470,7 +512,7 @@ def fig_profit_distribution(metrics: Dict, arm: str):
     configs = _config_order(metrics)
     fig, ax = plt.subplots(figsize=(max(6, 0.9 * len(configs) + 2), 4.0))
     ax.boxplot(
-        [metrics[k]["daily_profit"].ravel() for k in configs], positions=range(len(configs)),
+        [metrics[k]["daily_profit_per_mw_pct"].ravel() for k in configs], positions=range(len(configs)),
         showfliers=False, whis=(5, 95),
     )
     ax.axhline(0.0, color="black", linewidth=0.8, linestyle="--")
@@ -480,27 +522,28 @@ def fig_profit_distribution(metrics: Dict, arm: str):
         share = 100 * metrics[key]["loss_day_share"].mean()
         ax.text(x, ax.get_ylim()[1], f"{share:.0f}%", ha="center", va="top", fontsize=8, color="tab:red")
     ax.set_xticks(range(len(configs)), [_config_label(*k) for k in configs], rotation=45, ha="right")
-    ax.set_ylabel("Battery profit per day")
+    ax.set_ylabel("Battery profit per MW (% yield per day)")
     ax.set_title(f"Daily profit spread ({arm}); box = quartiles, whiskers = P5-P95, red = share of loss days", fontsize=9)
     fig.tight_layout()
     return fig
 
 
-def fig_battery(rows: List[Dict], arm: str):
+def fig_battery(rows: List[Dict], metrics: Dict, arm: str):
     plt = _pyplot()
     fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
-    durations = sorted({d for d, _ in _by_config(rows, arm, "bess_profit_mean")})
+    durations = sorted({d for _, d in metrics})
     colors = _duration_colors(durations)
 
-    for ax, key, label in (
-        (axes[0], "bess_equivalent_cycles_mean", "Equivalent cycles / day"),
-        (axes[1], "bess_profit_mean", "Battery profit / day"),
+    groups = _by_config(rows, arm, "bess_equivalent_cycles_mean")
+    profit = {(d, p): metrics[(p, d)]["profit_per_mw_pct"] for p, d in metrics}
+    for ax, series, label in (
+        (axes[0], groups, "Equivalent cycles per day"),
+        (axes[1], profit, "Battery profit per MW (% yield)"),
     ):
-        groups = _by_config(rows, arm, key)
         for duration in durations:
-            powers = sorted(p for d, p in groups if d == duration)
-            means = [np.mean(groups[(duration, p)]) for p in powers]
-            stds = [np.std(groups[(duration, p)]) for p in powers]
+            powers = sorted(p for d, p in series if d == duration)
+            means = [np.mean(series[(duration, p)]) for p in powers]
+            stds = [np.std(series[(duration, p)]) for p in powers]
             ax.errorbar(powers, means, yerr=stds, marker="o", capsize=3,
                         color=colors[duration], label=f"{duration:g} h")
         ax.set_xlabel("Battery power (MW)")
@@ -509,18 +552,24 @@ def fig_battery(rows: List[Dict], arm: str):
     axes[0].axhline(MIN_USEFUL_CYCLES, color="grey", linestyle=":")
     axes[0].text(axes[0].get_xlim()[0], MIN_USEFUL_CYCLES, " flag threshold", va="bottom", fontsize=7, color="grey")
 
-    charge = _by_config(rows, arm, "bess_mean_charge_price")
-    discharge = _by_config(rows, arm, "bess_mean_discharge_price")
+    charge: Dict[Tuple[float, float], List[float]] = {}
+    discharge: Dict[Tuple[float, float], List[float]] = {}
+    for r, base in paired_rows(rows, arm):
+        if r["bess_mean_charge_price"] is None or r["bess_mean_discharge_price"] is None:
+            continue
+        key = (r["duration_h"], r["power_mw"])
+        charge.setdefault(key, []).append(100.0 * r["bess_mean_charge_price"] / base["mean_price"])
+        discharge.setdefault(key, []).append(100.0 * r["bess_mean_discharge_price"] / base["mean_price"])
     ax = axes[2]
     for duration, power in sorted(set(charge) & set(discharge)):
         ax.scatter(np.mean(charge[(duration, power)]), np.mean(discharge[(duration, power)]),
                    color=colors[duration], s=30 + 3 * power)
     lims = [min(ax.get_xlim()[0], ax.get_ylim()[0]), max(ax.get_xlim()[1], ax.get_ylim()[1])]
     ax.plot(lims, lims, color="grey", linestyle=":")
-    ax.set_xlabel("Mean charge price")
-    ax.set_ylabel("Mean discharge price")
+    ax.set_xlabel("Mean charge price (index, no-battery mean = 100)")
+    ax.set_ylabel("Mean discharge price (index)")
     ax.set_title("Above the line = buys low, sells high (size = power)", fontsize=9)
-    fig.suptitle(f"Battery behaviour ({arm})", fontsize=11)
+    fig.suptitle(f"Battery behaviour ({arm}); yield: {YIELD_LABEL}", fontsize=10)
     fig.tight_layout()
     return fig
 
@@ -594,21 +643,19 @@ document.querySelectorAll('table.data').forEach(function (table) {
 TABLE_COLUMNS = [
     ("power_mw", "Power (MW)", "{:g}"),
     ("duration_h", "Duration (h)", "{:g}"),
-    ("mean_price_delta", "Mean price change", "{:+.2f}"),
-    ("consumer_cost_delta", "Consumer cost change / day", "{:+,.0f}"),
+    ("mean_price_pct", "Mean price change (%)", "{:+.2f}"),
     ("consumer_cost_pct", "Consumer cost change (%)", "{:+.2f}"),
-    ("generator_profit_delta", "Generator profit change / day", "{:+,.0f}"),
-    ("battery_profit", "Battery profit / day", "{:+,.0f}"),
-    ("profit_per_mw", "Profit per MW", "{:+,.1f}"),
-    ("profit_per_mwh", "Profit per MWh", "{:+,.1f}"),
-    ("cycles", "Cycles / day", "{:.2f}"),
+    ("generator_profit_pct", "Generator profit change (%)", "{:+.2f}"),
+    ("profit_per_mw_pct", "Battery profit per MW (% yield)", "{:+.2f}"),
+    ("profit_per_mwh_pct", "Battery profit per MWh (% yield)", "{:+.2f}"),
+    ("cycles", "Cycles per day", "{:.2f}"),
     ("utilisation_pct", "Hours active (%)", "{:.0f}"),
     ("cannibalisation_pct", "Revenue lost to own impact (%)", "{:.0f}"),
     ("loss_day_pct", "Loss days (%)", "{:.1f}"),
-    ("peak_price_delta", "Peak-hour price change", "{:+.2f}"),
-    ("offpeak_price_delta", "Off-peak price change", "{:+.2f}"),
+    ("peak_price_pct", "Peak-hour price change (%)", "{:+.2f}"),
+    ("offpeak_price_pct", "Off-peak price change (%)", "{:+.2f}"),
     ("scarcity_pp", "Scarcity hours (pp)", "{:+.1f}"),
-    ("peak_shaving_mw", "Peak load shaved (MW)", "{:+.1f}"),
+    ("peak_shaving_pct", "Peak load shaved (%)", "{:+.1f}"),
 ]
 
 
@@ -647,36 +694,38 @@ def _arm_sections(out_dir: Path, arm: str, rows, effects, metrics, battery_rows)
         f'<h2 id="{anchor}-policy">Policy view: prices and who pays ({anchor})</h2>',
         _section(
             "Effect heatmaps",
-            "Mean paired difference per battery size and duration. Blue is lower than the no-battery market, red is higher.",
+            "Mean paired difference per battery size and duration, as a percent of the no-battery mean. Blue is lower than the no-battery market, red is higher.",
             _embed(fig_heatmaps(effects, arm), f"effect heatmaps {arm}"),
         ),
         _section(
             "Peak, off-peak and scarcity",
             "Whether the battery helps when the system is tight. Peak and off-peak are the highest- and "
             "lowest-demand hours of each day; scarcity hours are those at or above the no-battery P95 price. "
-            "Peak load shaved is the drop in demand net of battery output, and can be negative when the battery "
+            "Peak and off-peak price changes are percent of the no-battery price in those hours. Peak load shaved is "
+            "the percent drop in demand net of battery output, and can be negative when the battery "
             "charges into the demand peak.",
             _embed(fig_price_shape(metrics, arm), f"price shape {arm}"),
         ),
         _section(
             "Who gains and who pays",
             "Change in consumer cost split into generator profit, generation cost, battery profit and the remainder "
-            "(unserved demand and other). Consumers gain mostly at generators' expense, not from the battery's own margin.",
+            "(unserved demand and other), all as a percent of the no-battery consumer bill. Consumers gain mostly "
+            "at generators' expense, not from the battery's own margin.",
             _embed(fig_welfare(metrics, arm), f"welfare decomposition {arm}"),
         ),
         _section(
             "Value of storage to consumers",
-            "Savings as a share of the no-battery bill and per MW installed. Flattening curves mean diminishing returns.",
+            "Savings as a share of the no-battery bill, in total and per MW of battery. Flattening curves mean diminishing returns.",
             _embed(fig_consumer_value(metrics, arm), f"consumer value {arm}"),
         ),
         _section(
             "Price distribution",
-            "Price by percentile of hours, and its change against no battery, for each duration.",
+            "Price index by percentile of hours (no-battery mean = 100), and its change against no battery, for each duration.",
             _embed(fig_price_duration(metrics, arm), f"price duration {arm}"),
         ),
         _section(
             "Generator profit by plant",
-            "Which generators give up margin when the battery arrives.",
+            "Which generators give up margin when the battery arrives, as a percent of each plant's own no-battery profit.",
             _embed(fig_profit_by_plant(metrics, arm), f"profit by plant {arm}"),
         ),
         _section(
@@ -686,18 +735,19 @@ def _arm_sections(out_dir: Path, arm: str, rows, effects, metrics, battery_rows)
         ),
         _section(
             "Hourly price profile",
-            "When in the day the battery moves the price, averaged over seeds.",
+            "When in the day the battery moves the price, as an index of the no-battery mean price, averaged over seeds.",
             _embed(fig_hourly(out_dir, arm), f"hourly price profile {arm}"),
         ),
         f'<h2 id="{anchor}-trader">Trader view: returns and risk ({anchor})</h2>',
         _section(
             "Returns on capacity",
-            "Profit per MW and per MWh of capacity per day, and the share of price-taker revenue lost to the battery's own price impact.",
+            "Battery profit per MW and per MWh of capacity, as a yield: percent of what the same capacity earns selling "
+            "flat all day at the no-battery mean price. Also the share of price-taker revenue lost to the battery's own price impact.",
             _embed(fig_trader_returns(metrics, arm), f"trader returns {arm}"),
         ),
         _section(
             "Daily profit distribution",
-            "Spread of daily profit across seeds and evaluation days, with the share of days the battery lost money.",
+            "Spread of daily profit per MW (as a yield) across seeds and evaluation days, with the share of days the battery lost money.",
             _embed(fig_profit_distribution(metrics, arm), f"daily profit distribution {arm}"),
         ),
         _section(
@@ -707,30 +757,32 @@ def _arm_sections(out_dir: Path, arm: str, rows, effects, metrics, battery_rows)
         ),
         _section(
             "Battery behaviour",
-            "Whether the learned battery actually arbitrages: cycles, profit and the price it buys and sells at.",
-            _embed(fig_battery(rows, arm), f"battery behaviour {arm}"),
+            "Whether the learned battery actually arbitrages: cycles, profit per MW and the price it buys and sells at, "
+            "as an index of the no-battery mean price.",
+            _embed(fig_battery(rows, metrics, arm), f"battery behaviour {arm}"),
         ),
         f'<h2 id="{anchor}-generation">Generation ({anchor})</h2>',
         _section(
             "Dispatch",
-            f"Who produces each hour with and without the largest battery ({_config_label(power, duration)}); "
-            "battery charging is drawn below zero.",
+            f"Who produces each hour with and without the largest battery ({_config_label(power, duration)}), as a percent "
+            "of total generator capacity; battery charging is drawn below zero.",
             _embed(fig_dispatch(out_dir, arm, power, duration), f"hourly dispatch {arm}"),
         ),
         _section(
             "Generation by plant",
-            "Hourly output of each generator and the battery (discharge minus charge, so negative "
-            "while charging) for every size and duration; dashed black is the market without a battery.",
+            "Hourly output of each generator as a percent of its capacity, and of the battery (discharge minus charge, "
+            "so negative while charging) as a percent of its rated power, for every size and duration; dashed black "
+            "is the market without a battery.",
             _embed(fig_generation_levels(out_dir, arm), f"generation by plant {arm}"),
         ),
         _section(
             "Generation change by hour",
-            "Hour by hour, how much each generator and the battery (discharge minus charge) "
-            "produce relative to the same seed without a battery, for every size and duration.",
+            "Hour by hour, how much each generator and the battery (discharge minus charge) produce relative to the "
+            "same seed without a battery, as a percent of capacity (battery: of rated power), for every size and duration.",
             _embed(fig_generation_change(out_dir, arm), f"generation change by hour {arm}"),
         ),
         f'<h2 id="{anchor}-data">Data ({anchor})</h2>',
-        '<p class="note">Click a column header to sort. Money is in the simulator\'s price units per day.</p>',
+        '<p class="note">Click a column header to sort. Every column is a percentage or a count; yield is explained at the top of the page.</p>',
         _summary_table_html(summary_table(arm, effects, metrics, rows)),
     ]
 
@@ -753,6 +805,10 @@ def build_dashboard(out_dir, name: str = "dashboard.html") -> Path:
         f"<h1>BESS sweep: {html.escape(out_dir.name)}</h1>",
         '<p class="note">Battery added next to pretrained generators; every effect is a '
         "per-seed difference against the same seed without a battery.</p>",
+        '<p class="note">The numbers come from a stylised simulation, so all values are relative: prices are an '
+        "index with the no-battery mean at 100, costs and profits are percent changes against no battery, and "
+        "battery revenue is a per-MW yield, the percent of what 1 MW sold flat all day would earn at the "
+        "no-battery mean price. Generation is a percent of capacity.</p>",
         f"<nav>{nav}{'<a href=\"#pretraining\">pretraining</a>' if convergence else ''}</nav>",
         '<div class="cards">',
         _card("seeds", str(len({r["seed"] for r in rows}))),

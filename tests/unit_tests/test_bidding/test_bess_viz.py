@@ -20,13 +20,24 @@ from easy_marl.examples.bidding.bess_analysis import (
     effect_grid,
     generation_by_hour,
     generation_change_by_hour,
+    generator_capacity,
     key_findings,
     metric_grid,
     summary_table,
     hourly_deltas,
     load_dispatch,
 )
-from easy_marl.examples.bidding.bess_viz import build_dashboard
+from easy_marl.examples.bidding.bess_viz import (
+    build_dashboard,
+    fig_battery,
+    fig_generation_change,
+    fig_generation_levels,
+    fig_hourly,
+    fig_price_duration,
+    fig_profit_by_plant,
+    fig_profit_distribution,
+    fig_welfare,
+)
 
 HOURS = 4
 EPISODES = 2
@@ -142,7 +153,7 @@ class TestHourlyDeltas:
 
 
 class TestEffectGrid:
-    def test_that_grid_holds_mean_delta_and_significance_per_cell(self, tmp_path):
+    def test_that_grid_holds_percent_change_and_significance_per_cell(self, tmp_path):
         write_run(tmp_path)
         effects = paired_effects(load_results(tmp_path))
 
@@ -153,8 +164,9 @@ class TestEffectGrid:
         assert powers == [10, 25]
         assert durations == [1, 4]
         assert means.shape == (2, 2)
-        assert means[0, 0] == pytest.approx(-1.2)
-        assert means[1, 1] == pytest.approx(-2.7)
+        # Percent of the baseline mean price of 50.
+        assert means[0, 0] == pytest.approx(-2.4)
+        assert means[1, 1] == pytest.approx(-5.4)
         # Every seed has a negative delta, so every interval excludes zero.
         assert significant.all()
 
@@ -191,6 +203,13 @@ class TestDispatch:
 
         with pytest.raises(ValueError, match="config"):
             dispatch_profile(tmp_path, arm="frozen", power=99, duration=4)
+
+
+class TestGeneratorCapacity:
+    def test_that_capacity_is_read_from_the_recorded_dispatch(self, tmp_path):
+        write_run(tmp_path)
+
+        assert generator_capacity(tmp_path) == pytest.approx([50.0, 50.0, 50.0])
 
 
 class TestGenerationChangeByHour:
@@ -248,18 +267,36 @@ class TestConfigMetrics:
         assert by_plant.shape == (len(SEEDS), GENERATORS)
         assert by_plant[0] == pytest.approx([1245.0 - 1660.0, 2205.0 - 2520.0, 2365.0 - 2580.0])
 
-    def test_that_peak_and_off_peak_hours_come_from_demand_rank(self, metrics):
-        # With four hours the single highest-demand hour is 3 and the lowest is hour 0.
-        assert metrics["delta_peak_price"] == pytest.approx([52.5 - 53.0] * len(SEEDS))
-        assert metrics["delta_offpeak_price"] == pytest.approx([50.5 - 50.0] * len(SEEDS))
+    def test_that_peak_and_off_peak_hours_come_from_demand_rank_and_are_percent_of_the_baseline_there(self, metrics):
+        # With four hours the single highest-demand hour is 3 (price 53) and the lowest is hour 0 (price 50).
+        assert metrics["delta_peak_price_pct"] == pytest.approx([100.0 * (52.5 - 53.0) / 53.0] * len(SEEDS))
+        assert metrics["delta_offpeak_price_pct"] == pytest.approx([100.0 * (50.5 - 50.0) / 50.0] * len(SEEDS))
 
     def test_that_scarcity_counts_hours_at_or_above_the_baseline_p95_in_percentage_points(self, metrics):
         # Baseline p95 is 53, reached in hour 3: 25% of hours. With the battery the max is 52.5.
         assert metrics["delta_scarcity_pp"] == pytest.approx([-25.0] * len(SEEDS))
 
-    def test_that_peak_shaving_is_the_drop_in_peak_residual_load(self, metrics):
+    def test_that_peak_shaving_is_the_percent_drop_in_peak_residual_load(self, metrics):
         # Peak demand 100 MW becomes max(52.5, 72.5, 67.5, 87.5) = 87.5 MW.
-        assert metrics["peak_shaving_mw"] == pytest.approx([12.5] * len(SEEDS))
+        assert metrics["peak_shaving_pct"] == pytest.approx([12.5] * len(SEEDS))
+
+    def test_that_baselines_are_recorded_to_express_effects_relatively(self, metrics):
+        assert metrics["baseline_mean_price"] == pytest.approx([51.5] * len(SEEDS))
+        assert metrics["baseline_generator_profit"] == pytest.approx([6760.0] * len(SEEDS))
+        assert metrics["baseline_generator_profit_by_plant"][0] == pytest.approx([1660.0, 2520.0, 2580.0])
+
+    def test_that_profit_is_per_mw_as_percent_of_a_full_power_day_at_the_baseline_mean_price(self, metrics):
+        # 25 per day over 25 MW is 1 per MW, against 4 h * 51.5 for a flat MW.
+        assert metrics["profit_per_mw_pct"] == pytest.approx([100.0 / (4 * 51.5)] * len(SEEDS))
+        assert metrics["daily_profit_per_mw_pct"] == pytest.approx(100.0 / (4 * 51.5))
+        assert metrics["daily_profit_per_mw_pct"].shape == (len(SEEDS), EPISODES)
+
+    def test_that_profit_per_mwh_is_percent_of_the_baseline_mean_price(self, tmp_path):
+        write_run(tmp_path)
+        one_hour = config_metrics(tmp_path, arm="frozen")[(25, 1)]
+
+        # 25 per day over 25 MWh of storage is 1 per MWh, against a mean price of 51.5.
+        assert one_hour["profit_per_mwh_pct"] == pytest.approx([100.0 / 51.5] * len(SEEDS))
 
     def test_that_schedule_is_a_fraction_of_rated_power_and_energy(self, metrics):
         assert metrics["net_frac_by_hour"][0] == pytest.approx([-0.5, -0.5, 0.5, 0.5])
@@ -279,12 +316,12 @@ class TestMetricGrid:
         write_run(tmp_path)
         metrics = config_metrics(tmp_path, arm="frozen")
 
-        powers, durations, means, significant = metric_grid(metrics, "peak_shaving_mw")
+        powers, durations, means, significant = metric_grid(metrics, "peak_shaving_pct")
 
         assert powers == [10, 25]
         assert durations == [1, 4]
         assert means.shape == (2, 2)
-        # Peak demand 100 MW drops by half the rated power: 5 MW at 10 MW, 12.5 MW at 25 MW.
+        # Peak demand 100 MW drops by half the rated power: 5% at 10 MW, 12.5% at 25 MW.
         assert means[0] == pytest.approx([5.0, 5.0])
         assert means[1] == pytest.approx([12.5, 12.5])
         assert significant.all()
@@ -303,28 +340,101 @@ class TestSummaryAndFindings:
         rows = load_results(tmp_path)
         return paired_effects(rows), config_metrics(tmp_path, arm="frozen"), rows
 
-    def test_that_the_table_has_one_row_per_config_with_per_mw_returns(self, parts):
+    def test_that_the_table_has_one_row_per_config_and_only_relative_quantities(self, parts):
         effects, metrics, rows = parts
 
         table = summary_table("frozen", effects, metrics, rows)
 
         assert len(table) == len(POWERS) * len(DURATIONS)
         row = next(r for r in table if r["power_mw"] == 25 and r["duration_h"] == 4)
-        assert row["battery_profit"] == pytest.approx(25.0)
-        assert row["profit_per_mw"] == pytest.approx(1.0)
-        assert row["profit_per_mwh"] == pytest.approx(0.25)
-        assert row["cannibalisation_pct"] == pytest.approx(50.0)
-        assert row["consumer_cost_delta"] == pytest.approx(-40.0)
+        assert row["mean_price_pct"] == pytest.approx(-5.4)
         assert row["consumer_cost_pct"] == pytest.approx(-100.0 * 40.0 / 14520.0)
+        assert row["generator_profit_pct"] == pytest.approx(-100.0 * 945.0 / 6760.0)
+        assert row["profit_per_mw_pct"] == pytest.approx(100.0 / (4 * 51.5))
+        assert row["profit_per_mwh_pct"] == pytest.approx(100.0 / (4 * 51.5))
+        assert row["cannibalisation_pct"] == pytest.approx(50.0)
+        assert row["peak_shaving_pct"] == pytest.approx(12.5)
         assert row["seeds_lower_cost"] == f"{len(SEEDS)}/{len(SEEDS)}"
+        absolute = {"battery_profit", "consumer_cost_delta", "generator_profit_delta", "mean_price_delta"}
+        assert absolute.isdisjoint(row)
 
-    def test_that_findings_quote_the_largest_battery(self, parts):
+    def test_that_findings_quote_the_largest_battery_in_percent_with_profit_per_mw(self, parts):
         effects, metrics, rows = parts
 
-        findings = key_findings("frozen", effects, metrics)
+        largest = next(f for f in key_findings("frozen", effects, metrics) if f.startswith("Largest battery"))
 
-        assert any("25 MW / 4 h" in f and "-40" in f for f in findings)
-        assert all(isinstance(f, str) for f in findings)
+        assert "25 MW / 4 h" in largest
+        assert "mean price -5.4%" in largest
+        assert "consumer cost -0.3%" in largest
+        assert "generator profit -14.0%" in largest
+        assert "battery profit per MW 0.49%" in largest
+
+    def test_that_no_finding_quotes_money_per_day_or_megawatts(self, parts):
+        effects, metrics, rows = parts
+
+        for finding in key_findings("frozen", effects, metrics):
+            assert "/day" not in finding
+            assert " MW)" not in finding
+
+
+class TestRelativeFigures:
+    @pytest.fixture
+    def parts(self, tmp_path):
+        write_run(tmp_path)
+        return tmp_path, config_metrics(tmp_path, arm="frozen"), load_results(tmp_path)
+
+    @staticmethod
+    def labels(fig):
+        return [ax.get_ylabel() for ax in fig.axes] + [ax.get_xlabel() for ax in fig.axes]
+
+    def test_that_the_welfare_chart_is_percent_of_the_no_battery_bill(self, parts):
+        _, metrics, _ = parts
+
+        fig = fig_welfare(metrics, "frozen")
+
+        assert "% of no-battery bill" in fig.axes[0].get_ylabel()
+        # Consumer cost change for the 25 MW / 4 h battery: -40 on a bill of 14,520.
+        diamonds = [c for c in fig.axes[0].collections if len(c.get_offsets()) == len(metrics)]
+        assert diamonds[0].get_offsets()[:, 1].min() == pytest.approx(-100.0 * 40.0 / 14520.0, abs=0.01)
+
+    def test_that_the_daily_profit_chart_is_per_mw_relative(self, parts):
+        _, metrics, _ = parts
+
+        fig = fig_profit_distribution(metrics, "frozen")
+
+        assert "per MW" in fig.axes[0].get_ylabel()
+        assert "%" in fig.axes[0].get_ylabel()
+
+    def test_that_the_battery_behaviour_profit_panel_is_per_mw_relative(self, parts):
+        _, metrics, rows = parts
+
+        fig = fig_battery(rows, metrics, "frozen")
+
+        assert "per MW" in fig.axes[1].get_ylabel()
+        assert "%" in fig.axes[1].get_ylabel()
+        assert "index" in fig.axes[2].get_xlabel()
+
+    def test_that_prices_are_an_index_of_the_no_battery_mean_price(self, parts):
+        out_dir, metrics, rows = parts
+
+        for fig in (fig_hourly(out_dir, "frozen"), fig_price_duration(metrics, "frozen")):
+            assert any("%" in label or "index" in label for label in self.labels(fig))
+
+    def test_that_generation_is_percent_of_capacity(self, parts):
+        out_dir, _, _ = parts
+
+        for fig in (fig_generation_levels(out_dir, "frozen"), fig_generation_change(out_dir, "frozen")):
+            assert all("(MW)" not in label and "change (MW)" not in label for label in self.labels(fig))
+            assert any("%" in label for label in self.labels(fig))
+
+    def test_that_generator_profit_by_plant_is_percent_of_each_plants_baseline(self, parts):
+        _, metrics, _ = parts
+
+        fig = fig_profit_by_plant(metrics, "frozen")
+
+        assert "%" in fig.axes[0].get_ylabel()
+        heights = [p.get_height() for p in fig.axes[0].patches]
+        assert min(heights) == pytest.approx(-25.0)
 
 
 class TestDashboard:
@@ -367,8 +477,18 @@ class TestDashboard:
 
         assert html.count('<table class="data">') == 1
         assert html.count("<tr>") == 1 + len(POWERS) * len(DURATIONS)
-        assert 'data-value="25.0"' in html
+        assert f'data-value="{100.0 / (4 * 51.5)}"' in html
         assert "addEventListener('click'" in html
+
+    def test_that_the_dashboard_reports_only_relative_quantities(self, tmp_path):
+        write_run(tmp_path)
+
+        html = build_dashboard(tmp_path).read_text()
+
+        assert "price units" not in html
+        assert "/ day" not in html
+        assert "Battery profit per MW" in html
+        assert "all values are relative" in html.lower()
 
     def test_that_every_arm_gets_its_own_section(self, tmp_path):
         write_run(tmp_path, arms=("frozen", "adaptive"))
