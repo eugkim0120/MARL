@@ -1,0 +1,426 @@
+<title>BESS Market Sim Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F3F6F5; --panel:#FFFFFF; --ink:#18221F; --mut:#5B6964; --rule:#D3DBD8;
+  --acc:#B85C00; --acc-soft:#F6E4D2; --gen:#2D5B88; --gen-soft:#DCE7F2;
+  --ok:#2E7D4F; --ok-soft:#DCEFE3; --warn:#9A3B2E; --warn-soft:#F5DEDA;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#111715; --panel:#18201D; --ink:#E2E9E6; --mut:#97A6A0; --rule:#2E3A36;
+    --acc:#F09A4A; --acc-soft:#3A2817; --gen:#86AEDB; --gen-soft:#1C2A3A;
+    --ok:#6CC08E; --ok-soft:#173022; --warn:#E58A7C; --warn-soft:#3A1E1A;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111715; --panel:#18201D; --ink:#E2E9E6; --mut:#97A6A0; --rule:#2E3A36;
+  --acc:#F09A4A; --acc-soft:#3A2817; --gen:#86AEDB; --gen-soft:#1C2A3A;
+  --ok:#6CC08E; --ok-soft:#173022; --warn:#E58A7C; --warn-soft:#3A1E1A;
+}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "IBM Plex Sans",system-ui,sans-serif;}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:20px;padding-block:40px 80px;display:grid;gap:44px;}
+header{display:grid;gap:10px;max-width:760px}
+.eyebrow{font:500 12px/1 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--acc)}
+h1{font:800 clamp(30px,5vw,46px)/1.05 Archivo,system-ui,sans-serif;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font:700 24px/1.2 Archivo,system-ui,sans-serif;margin:0;text-wrap:balance}
+h3{font:700 17px/1.3 Archivo,system-ui,sans-serif;margin:0}
+p{margin:0;max-width:68ch}
+.lede{color:var(--mut);font-size:17px}
+section{display:grid;gap:16px}
+figure{margin:0;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:18px;display:grid;gap:12px}
+.scroll{overflow-x:auto}
+svg{display:block;max-width:100%;height:auto;color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+.scroll svg{min-width:760px}
+figcaption{color:var(--mut);font-size:14px;max-width:80ch}
+code,.mono{font-family:"IBM Plex Mono",monospace;font-size:.88em}
+/* svg classes */
+.box{fill:var(--panel);stroke:currentColor;stroke-width:1.3}
+.box-gen{fill:var(--gen-soft);stroke:var(--gen);stroke-width:1.3}
+.box-acc{fill:var(--acc-soft);stroke:var(--acc);stroke-width:1.5}
+.box-ok{fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2}
+.box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.2;stroke-dasharray:5 4}
+.frame{fill:none;stroke:var(--mut);stroke-width:1;stroke-dasharray:4 4}
+.ln{fill:none;stroke:currentColor;stroke-width:1.3}
+.ln-acc{fill:none;stroke:var(--acc);stroke-width:2}
+.ln-dash{fill:none;stroke:var(--mut);stroke-width:1.3;stroke-dasharray:5 4}
+.t{fill:currentColor;font-size:13px}
+.tb{fill:currentColor;font-size:13.5px;font-weight:600}
+.ts{fill:var(--mut);font-size:11.5px}
+.tm{fill:var(--mut);font-size:11.5px;font-family:"IBM Plex Mono",monospace}
+.ta{fill:var(--acc);font-size:12px;font-weight:600}
+.tw{fill:var(--warn);font-size:12px}
+.bar{fill:var(--gen)}
+.cell{fill:var(--panel);stroke:var(--mut);stroke-width:.8}
+.cell-chg{fill:var(--gen);stroke:var(--gen)}
+.cell-dis{fill:var(--acc);stroke:var(--acc)}
+.cell-p{fill:var(--rule);stroke:var(--mut);stroke-width:.8}
+.arrowhead{fill:currentColor}
+.arrowhead-acc{fill:var(--acc)}
+/* table */
+.tbl{overflow-x:auto;background:var(--panel);border:1px solid var(--rule);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:820px;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--rule)}
+th{font:600 11.5px/1.3 "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;min-width:170px}
+.pill{display:inline-block;font:500 11.5px/1 "IBM Plex Mono",monospace;padding:4px 7px;border-radius:3px;white-space:nowrap}
+.p-cheap{background:var(--ok-soft);color:var(--ok)}
+.p-mid{background:var(--acc-soft);color:var(--acc)}
+.p-big{background:var(--warn-soft);color:var(--warn)}
+.stage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.stage{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:16px;display:grid;gap:8px;align-content:start}
+.stage .eyebrow{color:var(--mut)}
+.stage ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:14px;display:grid;gap:6px;align-content:start}
+.panel p{font-size:14px;color:var(--mut)}
+.need{font:500 11.5px/1.3 "IBM Plex Mono",monospace}
+.need.now{color:var(--ok)} .need.run{color:var(--acc)} .need.env{color:var(--warn)}
+.key{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--mut)}
+.key span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:2px;display:inline-block}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">easy_marl · BESS experiment · state as of 9 Oct 2026</div>
+  <h1>BESS Market Sim Map</h1>
+  <p class="lede">What has been built, what the battery's PPO policy sees each day, how the dashboard is put together, and a list of changes that would make the market more realistic, ranked by cost and expected effect.</p>
+</header>
+
+<!-- 1. Pipeline -->
+<section>
+  <h2>1 · What runs today</h2>
+  <p>Generators learn first among themselves. Their weights are then frozen, and each battery size is trained against the same frozen generators. Every effect is a paired difference against the same-seed market without a battery.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1080 330" role="img" aria-label="Pipeline: pretrain three generators per seed, evaluate them alone as the baseline, train one PPO battery per configuration against frozen generators, evaluate, then take paired differences with bootstrap confidence intervals and write results, report and dashboard.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="arrowhead"/></marker>
+      </defs>
+      <rect class="frame" x="10" y="14" width="652" height="306" rx="6"/>
+      <text class="tm" x="24" y="36">× 10 seeds (42–51)</text>
+      <rect class="frame" x="228" y="186" width="424" height="122" rx="6"/>
+      <text class="tm" x="240" y="300">× 20 configs: 5, 10, 25, 50, 75 MW × 1, 2, 4, 8 h</text>
+
+      <rect class="box-gen" x="20" y="115" width="180" height="74" rx="4"/>
+      <text class="tb" x="110" y="139" text-anchor="middle">Phase 1 · pretrain</text>
+      <text class="t" x="110" y="158" text-anchor="middle">3 PPO generators</text>
+      <text class="tm" x="110" y="176" text-anchor="middle">20 rounds × 20k days</text>
+
+      <rect class="box" x="470" y="30" width="170" height="64" rx="4"/>
+      <text class="tb" x="555" y="55" text-anchor="middle">Baseline eval</text>
+      <text class="tm" x="555" y="76" text-anchor="middle">gens alone · 20 days</text>
+
+      <rect class="box-acc" x="240" y="200" width="190" height="74" rx="4"/>
+      <text class="tb" x="335" y="224" text-anchor="middle">Phase 2 · add battery</text>
+      <text class="t" x="335" y="243" text-anchor="middle">1 PPO battery learns</text>
+      <text class="tm" x="335" y="261" text-anchor="middle">gens frozen · 5 × 20k days</text>
+
+      <rect class="box" x="470" y="205" width="170" height="64" rx="4"/>
+      <text class="tb" x="555" y="230" text-anchor="middle">Battery eval</text>
+      <text class="tm" x="555" y="251" text-anchor="middle">same 20 days · seed 10000</text>
+
+      <rect class="box" x="690" y="115" width="180" height="74" rx="4"/>
+      <text class="tb" x="780" y="139" text-anchor="middle">Paired effect</text>
+      <text class="t" x="780" y="158" text-anchor="middle">battery − baseline</text>
+      <text class="tm" x="780" y="176" text-anchor="middle">per seed · bootstrap CI</text>
+
+      <rect class="box" x="910" y="96" width="160" height="112" rx="4"/>
+      <text class="tb" x="924" y="118">Outputs</text>
+      <text class="tm" x="924" y="140">results.csv</text>
+      <text class="tm" x="924" y="158">paired_effects.csv</text>
+      <text class="tm" x="924" y="176">report.md</text>
+      <text class="tm" x="924" y="194">dashboard.html</text>
+
+      <path class="ln" d="M200 135 H300 V62 H468" marker-end="url(#a1)"/>
+      <text class="ts" x="310" y="54">frozen weights (cached)</text>
+      <path class="ln" d="M110 189 V237 H238" marker-end="url(#a1)"/>
+      <text class="ts" x="120" y="228">load + freeze</text>
+      <path class="ln" d="M430 237 H468" marker-end="url(#a1)"/>
+      <path class="ln" d="M640 62 H780 V113" marker-end="url(#a1)"/>
+      <text class="ts" x="648" y="54">prices, profits</text>
+      <path class="ln" d="M640 237 H660 V278 H780 V191" marker-end="url(#a1)"/>
+      <text class="ts" x="648" y="286">metrics + dispatch.npz</text>
+      <path class="ln" d="M870 152 H908" marker-end="url(#a1)"/>
+    </svg>
+    </div>
+    <figcaption>Because the generators are frozen and see only demand plus their own capacity and cost, they bid identically with and without the battery. Every price change in the battery market comes from the battery's dispatch. The adaptive arm, where generators keep learning, is designed but has not been run.</figcaption>
+  </figure>
+</section>
+
+<!-- 2. What PPO sees -->
+<section>
+  <h2>2 · What the battery's PPO sees, does and is paid</h2>
+  <p>One environment step is one whole day. The battery reads a 27-number vector once, writes 48 numbers for all 24 hours, and gets a single summed reward after the 24 hourly clearings.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1080 470" role="img" aria-label="The battery observation is the 24-hour demand profile divided by 125 plus three static numbers: power, energy and reference bid. It does not include state of charge, prices or other bids. The policy outputs 24 quantity and 24 price parameters. The market clears each hour, the battery's state of charge is updated, and the day's reward is revenue minus a bid penalty and a terminal penalty for ending below 50 percent.">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="arrowhead"/></marker>
+      </defs>
+
+      <!-- observation -->
+      <text class="tb" x="20" y="24">Observation · 27 numbers</text>
+      <line class="ln" x1="20" y1="150" x2="356" y2="150" stroke-opacity=".4"/>
+      <g>
+        <rect class="bar" x="22" y="102" width="11" height="48"/>
+        <rect class="bar" x="36" y="94" width="11" height="56"/>
+        <rect class="bar" x="50" y="85" width="11" height="65"/>
+        <rect class="bar" x="64" y="78" width="11" height="72"/>
+        <rect class="bar" x="78" y="74" width="11" height="76"/>
+        <rect class="bar" x="92" y="71" width="11" height="79"/>
+        <rect class="bar" x="106" y="70" width="11" height="80"/>
+        <rect class="bar" x="120" y="72" width="11" height="78"/>
+        <rect class="bar" x="134" y="76" width="11" height="74"/>
+        <rect class="bar" x="148" y="82" width="11" height="68"/>
+        <rect class="bar" x="162" y="89" width="11" height="61"/>
+        <rect class="bar" x="176" y="98" width="11" height="52"/>
+        <rect class="bar" x="190" y="106" width="11" height="44"/>
+        <rect class="bar" x="204" y="115" width="11" height="35"/>
+        <rect class="bar" x="218" y="122" width="11" height="28"/>
+        <rect class="bar" x="232" y="128" width="11" height="22"/>
+        <rect class="bar" x="246" y="132" width="11" height="18"/>
+        <rect class="bar" x="260" y="134" width="11" height="16"/>
+        <rect class="bar" x="274" y="133" width="11" height="17"/>
+        <rect class="bar" x="288" y="130" width="11" height="20"/>
+        <rect class="bar" x="302" y="126" width="11" height="24"/>
+        <rect class="bar" x="316" y="119" width="11" height="31"/>
+        <rect class="bar" x="330" y="110" width="11" height="40"/>
+        <rect class="bar" x="344" y="102" width="11" height="48"/>
+      </g>
+      <text class="tm" x="22" y="168">h0</text>
+      <text class="tm" x="106" y="168">h6 peak 125</text>
+      <text class="tm" x="236" y="168">h17 low 25</text>
+      <text class="ts" x="20" y="190">today's demand ÷ 125, incl. today's 5% noise</text>
+      <text class="ts" x="20" y="206">(24 numbers; it sees the noise before bidding)</text>
+
+      <rect class="box-acc" x="378" y="96" width="28" height="28" rx="2"/>
+      <rect class="box-acc" x="410" y="96" width="28" height="28" rx="2"/>
+      <rect class="box-acc" x="442" y="96" width="28" height="28" rx="2"/>
+      <text class="tm" x="392" y="115" text-anchor="middle" style="fill:var(--acc)">P</text>
+      <text class="tm" x="424" y="115" text-anchor="middle" style="fill:var(--acc)">E</text>
+      <text class="tm" x="456" y="115" text-anchor="middle" style="fill:var(--acc)">ref</text>
+      <text class="tm" x="378" y="142">MW÷50</text>
+      <text class="tm" x="378" y="158">MWh÷1200</text>
+      <text class="tm" x="378" y="174">30÷40</text>
+
+      <!-- policy -->
+      <path class="ln" d="M478 110 H516" marker-end="url(#a2)"/>
+      <rect class="box" x="518" y="76" width="130" height="68" rx="4"/>
+      <text class="tb" x="583" y="102" text-anchor="middle">PPO policy</text>
+      <text class="tm" x="583" y="122" text-anchor="middle">MLP 4 × 32</text>
+      <path class="ln" d="M648 110 H690" marker-end="url(#a2)"/>
+
+      <!-- action -->
+      <text class="tb" x="694" y="24">Action · 48 numbers</text>
+      <text class="ts" x="694" y="58">quantity q[h] ∈ [−1, 1] × P MW</text>
+      <g>
+        <rect class="cell" x="694" y="66" width="13" height="18"/><rect class="cell" x="709" y="66" width="13" height="18"/><rect class="cell" x="724" y="66" width="13" height="18"/><rect class="cell" x="739" y="66" width="13" height="18"/>
+        <rect class="cell-dis" x="754" y="66" width="13" height="18"/><rect class="cell-dis" x="769" y="66" width="13" height="18"/><rect class="cell-dis" x="784" y="66" width="13" height="18"/><rect class="cell" x="799" y="66" width="13" height="18"/>
+        <rect class="cell" x="814" y="66" width="13" height="18"/><rect class="cell" x="829" y="66" width="13" height="18"/><rect class="cell" x="844" y="66" width="13" height="18"/><rect class="cell" x="859" y="66" width="13" height="18"/>
+        <rect class="cell" x="874" y="66" width="13" height="18"/><rect class="cell" x="889" y="66" width="13" height="18"/><rect class="cell" x="904" y="66" width="13" height="18"/><rect class="cell-chg" x="919" y="66" width="13" height="18"/>
+        <rect class="cell-chg" x="934" y="66" width="13" height="18"/><rect class="cell-chg" x="949" y="66" width="13" height="18"/><rect class="cell" x="964" y="66" width="13" height="18"/><rect class="cell" x="979" y="66" width="13" height="18"/>
+        <rect class="cell" x="994" y="66" width="13" height="18"/><rect class="cell" x="1009" y="66" width="13" height="18"/><rect class="cell" x="1024" y="66" width="13" height="18"/><rect class="cell" x="1039" y="66" width="13" height="18"/>
+      </g>
+      <text class="ts" x="694" y="110">price p[h] = 30 + 50·tanh(a) → offer or buy bid</text>
+      <g>
+        <rect class="cell-p" x="694" y="118" width="13" height="18"/><rect class="cell-p" x="709" y="118" width="13" height="18"/><rect class="cell-p" x="724" y="118" width="13" height="18"/><rect class="cell-p" x="739" y="118" width="13" height="18"/>
+        <rect class="cell-p" x="754" y="118" width="13" height="18"/><rect class="cell-p" x="769" y="118" width="13" height="18"/><rect class="cell-p" x="784" y="118" width="13" height="18"/><rect class="cell-p" x="799" y="118" width="13" height="18"/>
+        <rect class="cell-p" x="814" y="118" width="13" height="18"/><rect class="cell-p" x="829" y="118" width="13" height="18"/><rect class="cell-p" x="844" y="118" width="13" height="18"/><rect class="cell-p" x="859" y="118" width="13" height="18"/>
+        <rect class="cell-p" x="874" y="118" width="13" height="18"/><rect class="cell-p" x="889" y="118" width="13" height="18"/><rect class="cell-p" x="904" y="118" width="13" height="18"/><rect class="cell-p" x="919" y="118" width="13" height="18"/>
+        <rect class="cell-p" x="934" y="118" width="13" height="18"/><rect class="cell-p" x="949" y="118" width="13" height="18"/><rect class="cell-p" x="964" y="118" width="13" height="18"/><rect class="cell-p" x="979" y="118" width="13" height="18"/>
+        <rect class="cell-p" x="994" y="118" width="13" height="18"/><rect class="cell-p" x="1009" y="118" width="13" height="18"/><rect class="cell-p" x="1024" y="118" width="13" height="18"/><rect class="cell-p" x="1039" y="118" width="13" height="18"/>
+      </g>
+      <rect class="cell-dis" x="694" y="152" width="11" height="11"/><text class="ts" x="710" y="162">discharge (sell)</text>
+      <rect class="cell-chg" x="812" y="152" width="11" height="11"/><text class="ts" x="828" y="162">charge (buy)</text>
+      <text class="ts" x="920" y="162">pattern illustrative</text>
+
+      <!-- hourly loop -->
+      <path class="ln" d="M870 172 V232" marker-end="url(#a2)"/>
+      <rect class="box" x="560" y="234" width="500" height="92" rx="4"/>
+      <text class="tb" x="576" y="258">For each hour h = 0 … 23</text>
+      <text class="t" x="576" y="280">clear merit order: 3 frozen generator offers + battery offer / buy bid</text>
+      <text class="tm" x="576" y="300">→ price P_h, charge_h, discharge_h</text>
+      <text class="tm" x="576" y="316">SoC += 0.949·charge − discharge ÷ 0.949   (round trip 0.9)</text>
+
+      <path class="ln" d="M560 280 H500" marker-end="url(#a2)"/>
+      <rect class="box-acc" x="190" y="234" width="308" height="92" rx="4"/>
+      <text class="tb" x="206" y="258">Day reward</text>
+      <text class="tm" x="206" y="280">Σ_h P_h·(discharge − charge)</text>
+      <text class="tm" x="206" y="298">− 0.01·Σ (bid − ref)²</text>
+      <text class="tm" x="206" y="316" style="fill:var(--warn)">− 80 × max(0, 50% − SoC_end) MWh</text>
+
+      <path class="ln-dash" d="M344 234 V212 H583 V148" marker-end="url(#a2)"/>
+      <text class="ts" x="596" y="200">PPO update every 24 days</text>
+      <text class="ts" x="596" y="216">(n_steps = 24, batch 24)</text>
+
+      <!-- not seen -->
+      <rect class="box-warn" x="20" y="352" width="1040" height="104" rx="4"/>
+      <text class="tb" x="36" y="376" style="fill:var(--warn)">Not in the observation</text>
+      <text class="t" x="36" y="400">• state of charge (reset to 50% every day, so it is constant at decision time)</text>
+      <text class="t" x="36" y="420">• any price: yesterday's prices, today's forecast prices, the spread it earned</text>
+      <text class="t" x="36" y="440">• generator offers and costs, and the hour of the week</text>
+      <text class="t" x="560" y="400">Frozen, deterministic generators bid as a fixed function of demand,</text>
+      <text class="t" x="560" y="420">so demand alone pins down the price curve the battery faces. The</text>
+      <text class="t" x="560" y="440">battery effectively has perfect foresight of a stationary market.</text>
+    </svg>
+    </div>
+    <figcaption>Generators get the same 24 demand numbers plus their own capacity ÷ 50 and cost ÷ 40 (26 numbers) and the same 48-number action. With SoC reset daily, leaving it out of the observation is harmless today. It stops being harmless the moment SoC carries over between days.</figcaption>
+  </figure>
+</section>
+
+<!-- 3. SoC carry-over -->
+<section>
+  <h2>3 · The change you asked about: carry charge into the next day</h2>
+  <p>Today each day is a separate episode. The terminal penalty exists only to stop the battery selling a free 50% every morning. Carrying SoC over removes the need for it, but the policy then has to see SoC.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1080 340" role="img" aria-label="Before: each day starts at 50 percent state of charge and is reset at midnight, with a penalty for ending below 50 percent. After: state of charge carries across a seven-day episode, the observation gains state of charge, and the only terminal term is at the end of the episode.">
+      <defs>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="arrowhead"/></marker>
+      </defs>
+      <text class="tb" x="20" y="24">Now · independent days</text>
+      <text class="tm" x="20" y="42">episode = 1 day · obs has no SoC</text>
+      <!-- axes row 1: y 60..150 ; 50% line at y=105 -->
+      <g>
+        <rect class="box" x="200" y="56" width="270" height="100" rx="2" style="fill:none"/>
+        <rect class="box" x="490" y="56" width="270" height="100" rx="2" style="fill:none"/>
+        <rect class="box" x="780" y="56" width="270" height="100" rx="2" style="fill:none"/>
+        <line class="ln-dash" x1="200" y1="106" x2="1050" y2="106"/>
+        <text class="tm" x="190" y="110" text-anchor="end">50%</text>
+        <text class="tm" x="190" y="62" text-anchor="end">100%</text>
+        <text class="tm" x="190" y="156" text-anchor="end">0%</text>
+        <polyline class="ln-acc" points="200,106 230,140 270,150 330,150 390,70 430,62 470,106"/>
+        <polyline class="ln-acc" points="490,106 520,140 560,150 620,150 680,70 720,62 760,106"/>
+        <polyline class="ln-acc" points="780,106 810,140 850,150 910,150 970,74 1010,74 1050,118"/>
+        <text class="ts" x="335" y="172" text-anchor="middle">day 1</text>
+        <text class="ts" x="625" y="172" text-anchor="middle">day 2</text>
+        <text class="ts" x="860" y="172" text-anchor="middle">day 3</text>
+        <text class="tw" x="1050" y="172" text-anchor="end">ends low: −80/MWh</text>
+        <text class="ta" x="480" y="50" text-anchor="middle">reset</text>
+        <text class="ta" x="770" y="50" text-anchor="middle">reset</text>
+      </g>
+
+      <text class="tb" x="20" y="214">Proposed · carried SoC</text>
+      <text class="tm" x="20" y="232">episode = 7 days · obs + SoC</text>
+      <g>
+        <rect class="box" x="200" y="216" width="850" height="100" rx="2" style="fill:none"/>
+        <line class="ln-dash" x1="200" y1="266" x2="1050" y2="266"/>
+        <line class="ln" x1="490" y1="216" x2="490" y2="316" stroke-opacity=".3"/>
+        <line class="ln" x1="780" y1="216" x2="780" y2="316" stroke-opacity=".3"/>
+        <text class="tm" x="190" y="270" text-anchor="end">50%</text>
+        <polyline class="ln-acc" points="200,266 230,300 270,310 330,310 390,230 430,222 470,250 490,250 520,290 560,310 620,310 680,226 720,222 760,280 780,280 810,300 850,310 910,310 970,234 1010,226 1050,266"/>
+        <text class="ts" x="335" y="332" text-anchor="middle">day 1</text>
+        <text class="ts" x="625" y="332" text-anchor="middle">day 2</text>
+        <text class="ts" x="860" y="332" text-anchor="middle">… day 7</text>
+        <text class="ta" x="490" y="210" text-anchor="middle">SoC carries</text>
+        <text class="ta" x="780" y="210" text-anchor="middle">SoC carries</text>
+        <text class="ts" x="1050" y="332" text-anchor="end">one end-of-week term</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>Shapes are illustrative. With the current demand profile (one sinusoid, same every day apart from 5% noise), there is little reason to shift energy between days, so carry-over mainly removes the free half-full start and the 80-per-MWh distortion. It adds cycling only once days differ, which is why it pairs with the weekly profile and renewables in the list below.</figcaption>
+  </figure>
+</section>
+
+<!-- 4. Visualisation layer -->
+<section>
+  <h2>4 · Visualisation layer</h2>
+  <p><code>bess_viz.build_dashboard</code> reads what the sweep saves and writes one self-contained HTML file. The proposed panels are tagged by what they need: existing files only, a new benchmark run, or an environment change.</p>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1080 300" role="img" aria-label="Saved files per config and per seed feed bess_viz, which builds the dashboard sections: policy view, trader view, generation, data, and pretraining.">
+      <defs>
+        <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="arrowhead"/></marker>
+      </defs>
+      <text class="tb" x="20" y="24">Saved by the sweep</text>
+      <rect class="box" x="20" y="40" width="230" height="44" rx="3"/><text class="tm" x="34" y="60">metrics.json</text><text class="ts" x="34" y="76">per config × seed: scalars</text>
+      <rect class="box" x="20" y="96" width="230" height="44" rx="3"/><text class="tm" x="34" y="116">dispatch.npz</text><text class="ts" x="34" y="132">hourly prices, per-plant MW, SoC</text>
+      <rect class="box" x="20" y="152" width="230" height="44" rx="3"/><text class="tm" x="34" y="172">convergence.json</text><text class="ts" x="34" y="188">pretraining bid change per round</text>
+      <rect class="box" x="20" y="208" width="230" height="44" rx="3"/><text class="tm" x="34" y="228">results / paired_effects.csv</text><text class="ts" x="34" y="244">aggregates + bootstrap CIs</text>
+
+      <path class="ln" d="M250 62 H300 V146 H338" /><path class="ln" d="M250 118 H300" /><path class="ln" d="M250 174 H300" /><path class="ln" d="M250 230 H300 V146" />
+      <path class="ln" d="M300 146 H338" marker-end="url(#a4)"/>
+      <rect class="box-acc" x="340" y="116" width="170" height="60" rx="4"/>
+      <text class="tb" x="425" y="141" text-anchor="middle">bess_viz.py</text>
+      <text class="tm" x="425" y="160" text-anchor="middle">matplotlib → base64</text>
+      <path class="ln" d="M510 146 H560" marker-end="url(#a4)"/>
+
+      <text class="tb" x="562" y="24">dashboard.html · built</text>
+      <rect class="box" x="562" y="40" width="500" height="44" rx="3"/><text class="tb" x="576" y="60">Policy view</text><text class="ts" x="576" y="76">effect heatmaps, price shape, welfare split, price duration, profit by plant</text>
+      <rect class="box" x="562" y="96" width="500" height="44" rx="3"/><text class="tb" x="576" y="116">Trader view</text><text class="ts" x="576" y="132">revenue per MW, schedule, profit distribution, cycles</text>
+      <rect class="box" x="562" y="152" width="500" height="44" rx="3"/><text class="tb" x="576" y="172">Generation</text><text class="ts" x="576" y="188">hourly per-plant output and its change, dispatch stack</text>
+      <rect class="box" x="562" y="208" width="240" height="44" rx="3"/><text class="tb" x="576" y="228">Data</text><text class="ts" x="576" y="244">tables, CSV links</text>
+      <rect class="box" x="822" y="208" width="240" height="44" rx="3"/><text class="tb" x="836" y="228">Pretraining</text><text class="ts" x="836" y="244">convergence per seed</text>
+      <text class="ts" x="562" y="280">All values relative: % of no-battery market, or yield per MW.</text>
+    </svg>
+    </div>
+    <figcaption>Everything in the built dashboard comes from these four files, so new panels that only re-read them cost no compute.</figcaption>
+  </figure>
+
+  <div class="key">
+    <span><i class="sw" style="background:var(--ok)"></i>existing files only</span>
+    <span><i class="sw" style="background:var(--acc)"></i>needs a new run</span>
+    <span><i class="sw" style="background:var(--warn)"></i>needs an environment change</span>
+  </div>
+  <div class="panels">
+    <div class="panel"><h3>Full-power hours used</h3><p>Replaces the 0.6-cycle flag, which marks 4 h and 8 h batteries almost by construction. Discharge MWh ÷ MW, per day, against the count of cheap and expensive hours.</p><span class="need now">dispatch.npz</span></div>
+    <div class="panel"><h3>Spread-hours budget</h3><p>Per config: hours ≤45 and ≥75 in the baseline next to hours the battery actually used. This shows why cycling stays low.</p><span class="need now">dispatch.npz (baseline)</span></div>
+    <div class="panel"><h3>Learned vs achievable</h3><p>PPO net revenue as a share of an open-loop CMA-ES schedule, per config and seed. It separates "market pays little" from "learner missed it".</p><span class="need run">CMA-ES on 200 cases, ~25 min / 8 cores</span></div>
+    <div class="panel"><h3>Scenario comparison</h3><p>Small multiples: each realism lever against the current base case, on the same paired metrics (price, consumer bill, generator profit, battery yield).</p><span class="need run">one sweep per scenario</span></div>
+    <div class="panel"><h3>Week strip</h3><p>Hour × day heatmap of price, with the SoC line across seven days. It only makes sense once SoC carries over.</p><span class="need env">multi-day episodes</span></div>
+    <div class="panel"><h3>Bid curve inspector</h3><p>For a chosen hour: the generator offer stack, the battery's offer or buy bid, and where the market cleared. It shows price impact directly.</p><span class="need now">needs bids saved; small save change</span></div>
+  </div>
+</section>
+
+<!-- 5. Brainstorm -->
+<section>
+  <h2>5 · Making the market more realistic</h2>
+  <p>Ranked by what each one changes for a battery. The current market has one smooth demand wave, three generators, perfect demand foresight and no battery wear. All three make the market less like a real one.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Lever</th><th>Mechanism</th><th>What it does to the battery</th><th>Build</th><th>Rerun</th></tr></thead>
+      <tbody>
+        <tr><td>SoC carry-over</td><td>7-day episodes, SoC added to obs, penalty only at episode end</td><td>Removes the free 50% start and the 80/MWh distortion. Small cycling change while days look alike.</td><td><span class="pill p-cheap">env + obs</span></td><td>batteries only</td></tr>
+        <tr><td>Weekly load shape</td><td>Two-peak weekday, flatter weekend. <code>make_advanced_params.example_demand_profile</code> already builds a 7-day profile.</td><td>Days start to differ, so carry-over earns something. Two peaks give two spread windows a day.</td><td><span class="pill p-cheap">params</span></td><td>pretrain + batteries</td></tr>
+        <tr><td>Solar (and wind)</td><td>Zero-cost renewable unit, profile scaled by a daily weather draw</td><td>Midday price collapse: the duck curve. This is how real batteries earn most of their spread. Probably the biggest lever on cycling.</td><td><span class="pill p-mid">new agent type</span></td><td>pretrain + batteries</td></tr>
+        <tr><td>Forecast error</td><td>Bid on forecast demand; settle the gap at an imbalance price</td><td>Ends perfect foresight. Gives flexibility a value beyond arbitrage. Needs a second settlement stage.</td><td><span class="pill p-big">market redesign</span></td><td>everything</td></tr>
+        <tr><td>Degradation cost</td><td>Cost per MWh throughput (or per equivalent cycle) in the battery reward</td><td>Fewer marginal cycles. Makes revenue figures honest for a trader.</td><td><span class="pill p-cheap">reward term</span></td><td>batteries only</td></tr>
+        <tr><td>SoC window</td><td>Usable 10–90% instead of 0–100%</td><td>About 20% less usable energy. Matches warranty practice.</td><td><span class="pill p-cheap">one clamp</span></td><td>batteries only</td></tr>
+        <tr><td>Steeper merit order</td><td>6–10 generators, a peaker at high cost, optional fuel-price draw per day</td><td>Wider and more varied spreads. Less dominated by three agents bidding near caps.</td><td><span class="pill p-mid">params + pretrain time</span></td><td>everything</td></tr>
+        <tr><td>Scarcity pricing</td><td>Raise the cap well above the costliest unit, with a demand curve at the top</td><td>A few very high hours. Short-duration batteries gain most.</td><td><span class="pill p-cheap">params</span></td><td>everything</td></tr>
+        <tr><td>Adaptive generators</td><td>Arm B: generators keep learning with the battery present</td><td>Long-run answer. Generators may bid around the battery.</td><td><span class="pill p-cheap">already built</span></td><td>arm B sweep</td></tr>
+        <tr><td>Several batteries</td><td>2–4 storage agents of the same total size</td><td>Storage competing with storage. Measures how fast added storage wipes out the spread.</td><td><span class="pill p-mid">N &gt; 1 storage</span></td><td>new sweep</td></tr>
+        <tr><td>Price information</td><td>Add yesterday's 24 prices to the battery obs</td><td>Matters once generators adapt or demand is uncertain. Little value in today's stationary market.</td><td><span class="pill p-cheap">obs</span></td><td>batteries only</td></tr>
+        <tr><td>Two zones</td><td>Two nodes and a line limit</td><td>Location arbitrage and congestion relief. A different paper.</td><td><span class="pill p-big">clearing rewrite</span></td><td>everything</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Suggested order</h3>
+  <div class="stage-grid">
+    <div class="stage">
+      <div class="eyebrow">Stage 1 · fix the battery model</div>
+      <ul><li>SoC carry-over over 7-day episodes, SoC in obs</li><li>Degradation cost and 10–90% window</li><li>Weekly load shape</li><li>Panels: full-power hours, spread budget</li></ul>
+      <p class="mono" style="color:var(--mut)">Cheap. Makes the battery figures defensible.</p>
+    </div>
+    <div class="stage">
+      <div class="eyebrow">Stage 2 · real spreads</div>
+      <ul><li>Solar unit with weather draw</li><li>Steeper merit order, scarcity cap</li><li>Panels: scenario comparison, week strip</li></ul>
+      <p class="mono" style="color:var(--mut)">Changes the economics, not just the bookkeeping.</p>
+    </div>
+    <div class="stage">
+      <div class="eyebrow">Stage 3 · strategic response</div>
+      <ul><li>Arm B, adaptive generators</li><li>Several batteries</li><li>Forecast error and imbalance settlement</li><li>Panel: learned vs achievable</li></ul>
+      <p class="mono" style="color:var(--mut)">Most expensive. The long-run equilibrium question.</p>
+    </div>
+  </div>
+</section>
+
+</div>

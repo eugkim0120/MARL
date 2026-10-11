@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mechanism view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#B85C00}a:hover{color:#8A4500}
+</style>
+</helmet>
+<div style="background: #F3F6F5; color: #18221F; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.55; min-height: 1160px; box-sizing: border-box; padding: 40px 32px 56px">
+<div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
+
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <div style="font: 500 12px/1 'IBM Plex Mono', monospace; letter-spacing: .08em; text-transform: uppercase; color: #5B6964">Mechanism · S0 · 25 MW · 8 h · seed 43 · mean of 20 eval days</div>
+    <h1 style="margin: 0; font: 800 34px/1.1 Archivo, sans-serif">Three trades a day, using under half the tank</h1>
+    <p style="margin: 0; max-width: 72ch; color: #4E5C57">The battery charges at 00:00, 20:00 and 21:00 and sells at 10:00, 14:00 and 19:00. State of charge stays between 24% and 63%. Prices are % of the no-battery daily mean.</p>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px">
+      <h3 style="margin: 0; font: 600 16px Archivo, sans-serif">Hourly price and battery dispatch</h3>
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; font: 12px 'IBM Plex Mono', monospace; color: #5B6964">
+        <span style="display: inline-flex; gap: 5px; align-items: center"><span style="width: 16px; height: 0; border-top: 2px dashed #8A9893"></span>no battery</span>
+        <span style="display: inline-flex; gap: 5px; align-items: center"><span style="width: 16px; height: 2px; background: #18221F"></span>with battery</span>
+        <span style="display: inline-flex; gap: 5px; align-items: center"><span style="width: 12px; height: 12px; background: rgba(184,92,0,.35)"></span>discharge</span>
+        <span style="display: inline-flex; gap: 5px; align-items: center"><span style="width: 12px; height: 12px; background: rgba(45,91,136,.35)"></span>charge</span>
+      </div>
+    </div>
+    <svg viewBox="0 0 1080 300" role="img" aria-label="Hourly prices with and without the battery, with the battery charging at midnight and 20 to 21 hours, and discharging at 10, 14 and 19 hours." style="width: 100%; height: auto; font-family: 'IBM Plex Mono', monospace">
+<line x1="60" y1="203.7" x2="1050" y2="203.7" stroke="#B9C4C0"/><text x="52" y="207.7" text-anchor="end" font-size="11" fill="#5B6964">0</text>
+<line x1="60" y1="145.8" x2="1050" y2="145.8" stroke="#E4EAE8"/><text x="52" y="149.8" text-anchor="end" font-size="11" fill="#5B6964">50%</text>
+<line x1="60" y1="87.9" x2="1050" y2="87.9" stroke="#E4EAE8"/><text x="52" y="91.9" text-anchor="end" font-size="11" fill="#5B6964">100%</text>
+<line x1="60" y1="30.0" x2="1050" y2="30.0" stroke="#E4EAE8"/><text x="52" y="34.0" text-anchor="end" font-size="11" fill="#5B6964">150%</text>
+<rect x="48.0" y="203.7" width="24" height="60.0" fill="#2D5B88" opacity=".35"/>
+<rect x="130.5" y="203.7" width="24" height="5.2" fill="#2D5B88" opacity=".35"/>
+<rect x="460.5" y="143.7" width="24" height="60.0" fill="#B85C00" opacity=".35"/>
+<rect x="584.2" y="203.7" width="24" height="1.4" fill="#2D5B88" opacity=".35"/>
+<rect x="625.5" y="143.7" width="24" height="60.0" fill="#B85C00" opacity=".35"/>
+<rect x="831.8" y="144.5" width="24" height="59.2" fill="#B85C00" opacity=".35"/>
+<rect x="873.0" y="203.7" width="24" height="60.0" fill="#2D5B88" opacity=".35"/>
+<rect x="914.2" y="203.7" width="24" height="60.0" fill="#2D5B88" opacity=".35"/>
+<polyline points="60.0,115.2 101.2,94.4 142.5,113.6 183.8,47.0 225.0,66.6 266.2,66.6 307.5,47.0 348.8,66.6 390.0,66.6 431.2,82.2 472.5,38.5 513.8,75.7 555.0,86.0 596.2,93.0 637.5,75.1 678.8,81.0 720.0,130.3 761.2,66.6 802.5,77.4 843.8,66.6 885.0,145.6 926.2,236.0 967.5,81.8 1008.8,90.6" fill="none" stroke="#8A9893" stroke-width="2" stroke-dasharray="5 4"/>
+<polyline points="60.0,88.5 101.2,94.4 142.5,113.6 183.8,47.0 225.0,66.6 266.2,66.6 307.5,47.0 348.8,66.6 390.0,66.6 431.2,82.2 472.5,38.5 513.8,75.7 555.0,86.0 596.2,93.0 637.5,77.2 678.8,81.0 720.0,130.3 761.2,66.6 802.5,77.4 843.8,90.2 885.0,128.9 926.2,223.3 967.5,81.8 1008.8,90.6" fill="none" stroke="#18221F" stroke-width="2"/>
+<text x="60.0" y="290" text-anchor="middle" font-size="11" fill="#5B6964">00:00</text>
+<text x="183.8" y="290" text-anchor="middle" font-size="11" fill="#5B6964">03:00</text>
+<text x="307.5" y="290" text-anchor="middle" font-size="11" fill="#5B6964">06:00</text>
+<text x="431.2" y="290" text-anchor="middle" font-size="11" fill="#5B6964">09:00</text>
+<text x="555.0" y="290" text-anchor="middle" font-size="11" fill="#5B6964">12:00</text>
+<text x="678.8" y="290" text-anchor="middle" font-size="11" fill="#5B6964">15:00</text>
+<text x="802.5" y="290" text-anchor="middle" font-size="11" fill="#5B6964">18:00</text>
+<text x="926.2" y="290" text-anchor="middle" font-size="11" fill="#5B6964">21:00</text>
+    </svg>
+    <svg viewBox="0 0 1080 130" role="img" aria-label="State of charge starts at 50 percent, peaks at 63 percent, falls to 24 percent at 19 hours, and ends at 48 percent." style="width: 100%; height: auto; font-family: 'IBM Plex Mono', monospace">
+<line x1="60" y1="110" x2="1050" y2="110" stroke="#B9C4C0"/><line x1="60" y1="20" x2="1050" y2="20" stroke="#E4EAE8"/><line x1="60" y1="65" x2="1050" y2="65" stroke="#E4EAE8" stroke-dasharray="4 4"/>
+<text x="52" y="114" text-anchor="end" font-size="11" fill="#5B6964">0%</text><text x="52" y="69" text-anchor="end" font-size="11" fill="#5B6964">50%</text><text x="52" y="24" text-anchor="end" font-size="11" fill="#5B6964">100%</text>
+<polyline points="60,65 80.0,54.3 121.2,54.3 162.5,53.4 203.8,53.4 245.0,53.4 286.2,53.4 327.5,53.4 368.8,53.4 410.0,53.4 451.2,53.3 492.5,65.2 533.8,65.2 575.0,65.2 616.2,64.9 657.5,76.8 698.8,76.8 740.0,76.8 781.2,76.8 822.5,76.8 863.8,88.5 905.0,77.8 946.2,67.1 987.5,67.1 1028.8,67.1" fill="none" stroke="#B85C00" stroke-width="2.5"/>
+      <text x="1050" y="128" text-anchor="end" font-size="11" fill="#9A3B2E">ends 48%: terminal penalty applies</text>
+    </svg>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px">
+    <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center">
+        <h3 style="margin: 0; font: 600 16px Archivo, sans-serif">Bid curve inspector · 21:00</h3>
+        <select id="hour" aria-label="Hour" style="min-height: 44px; padding: 0 12px; border: 1px solid #B9C4C0; border-radius: 4px; background: #FFFFFF; font: 14px 'IBM Plex Mono', monospace; color: #18221F"><option>21:00</option><option>19:00</option></select>
+      </div>
+      <svg viewBox="0 0 600 260" role="img" aria-label="At 21:00 two generators offer at negative prices. Without the battery demand clears on the cheapest offer; the battery's 25 megawatt buy pushes clearing to the second offer, a less negative price." style="width: 100%; height: auto; font-family: 'IBM Plex Mono', monospace">
+        <line x1="60" y1="230" x2="540" y2="230" stroke="#B9C4C0"/>
+        <line x1="60" y1="174.4" x2="540" y2="174.4" stroke="#B9C4C0"/>
+        <text x="52" y="178" text-anchor="end" font-size="11" fill="#5B6964">0</text>
+        <text x="52" y="63" text-anchor="end" font-size="11" fill="#5B6964">100%</text>
+        <line x1="60" y1="63.3" x2="540" y2="63.3" stroke="#E4EAE8"/>
+        <polyline points="60,212.2 220,212.2 220,193.3 380,193.3 380,43.3 540,43.3" fill="none" stroke="#2D5B88" stroke-width="2.5"/>
+        <text x="140" y="206" text-anchor="middle" font-size="11" fill="#2D5B88">G2 · 50 MW</text>
+        <text x="300" y="187" text-anchor="middle" font-size="11" fill="#2D5B88">G3 · 50 MW</text>
+        <text x="460" y="37" text-anchor="middle" font-size="11" fill="#2D5B88">G1 · 50 MW</text>
+        <line x1="213.6" y1="30" x2="213.6" y2="230" stroke="#8A9893" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <text x="206" y="250" text-anchor="end" font-size="11" fill="#5B6964">demand 48</text>
+        <line x1="293.6" y1="30" x2="293.6" y2="230" stroke="#B85C00" stroke-width="2"/>
+        <text x="300" y="250" font-size="11" fill="#B85C00">+ battery buys 25</text>
+        <circle cx="293.6" cy="193.3" r="5" fill="#B85C00"/>
+        <text x="60" y="20" font-size="11" fill="#5B6964">offer price, % of mean</text>
+        <text x="540" y="250" text-anchor="end" font-size="11" fill="#5B6964">MW</text>
+      </svg>
+      <span style="font-size: 13px; color: #5B6964">Bids and offered quantities are already saved in dispatch.npz, so this panel needs no new run. The battery is paid to charge here.</span>
+    </div>
+
+    <div style="border: 1px dashed #B9C4C0; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 10px; color: #5B6964">
+      <h3 style="margin: 0; font: 600 16px Archivo, sans-serif; color: #18221F">Week strip · needs S1</h3>
+      <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px">
+        <span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span><span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span><span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span><span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span><span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span><span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span><span style="height: 90px; background: repeating-linear-gradient(180deg, #EEF2F1 0 10px, #E4EAE8 10px 20px)"></span>
+      </div>
+      <span style="font: 12px 'IBM Plex Mono', monospace">Mon … Sun · hour × day price heatmap, SoC line across all 7 days</span>
+      <span style="font-size: 13px">Today every day restarts at 50%, so a week would just be seven copies of the day above.</span>
+    </div>
+  </div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1160}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

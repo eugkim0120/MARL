@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scenario overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#B85C00}a:hover{color:#8A4500}
+</style>
+</helmet>
+<div style="background: #F3F6F5; color: #18221F; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.55; min-height: 1180px; box-sizing: border-box; padding: 40px 32px 56px">
+<div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px">
+
+  <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div style="font: 500 12px/1 'IBM Plex Mono', monospace; letter-spacing: .08em; text-transform: uppercase; color: #B85C00">Overview · S0 Today · frozen generators · 10 seeds</div>
+      <h1 style="margin: 0; font: 800 34px/1.1 Archivo, sans-serif">A battery trims prices a little, and generators pay for it</h1>
+    </div>
+    <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">20 sizes · paired vs no-battery market</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Scenario ladder</div>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px">
+      <div style="background: #18221F; color: #FFFFFF; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 4px">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; color: #F0A04B">S0 · ran</span>
+        <span style="font: 600 16px Archivo, sans-serif">Today</span>
+        <span style="font-size: 13px; color: #C9D3CF">1-day episodes, perfect foresight</span>
+      </div>
+      <div style="border: 1px dashed #8A9893; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 4px; color: #5B6964">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace">S1 · not run</span>
+        <span style="font: 600 16px Archivo, sans-serif; color: #18221F">Battery fixes</span>
+        <span style="font-size: 13px">SoC carry-over, wear, 10–90%</span>
+      </div>
+      <div style="border: 1px dashed #8A9893; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 4px; color: #5B6964">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace">S2 · not run</span>
+        <span style="font: 600 16px Archivo, sans-serif; color: #18221F">Weekly load</span>
+        <span style="font-size: 13px">two peaks, weekend dip</span>
+      </div>
+      <div style="border: 1px dashed #8A9893; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 4px; color: #5B6964">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace">S3 · not run</span>
+        <span style="font: 600 16px Archivo, sans-serif; color: #18221F">Solar</span>
+        <span style="font-size: 13px">midday dip, weather draw</span>
+      </div>
+      <div style="border: 1px dashed #8A9893; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 4px; color: #5B6964">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace">S4 · not run</span>
+        <span style="font: 600 16px Archivo, sans-serif; color: #18221F">Adaptive gens</span>
+        <span style="font-size: 13px">generators keep learning</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Headline effects · range over 20 sizes</div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 13px; color: #5B6964">Mean price</span>
+        <span style="font: 800 30px/1 Archivo, sans-serif; font-variant-numeric: tabular-nums">−1.7%</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">largest drop · 25 MW 4–8 h</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">10 of 20 sizes significant</span>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 13px; color: #5B6964">Consumer bill</span>
+        <span style="font: 800 30px/1 Archivo, sans-serif; color: #2D5B88; font-variant-numeric: tabular-nums">−2.8%</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">largest saving · 25 MW 8 h</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">14 of 20 significant</span>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 13px; color: #5B6964">Generator profit</span>
+        <span style="font: 800 30px/1 Archivo, sans-serif; color: #9A3B2E; font-variant-numeric: tabular-nums">−1.3 to −8.4%</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">falls in every size</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">20 of 20 significant</span>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 13px; color: #5B6964">Battery yield per MW</span>
+        <span style="font: 800 30px/1 Archivo, sans-serif; color: #B85C00; font-variant-numeric: tabular-nums">2.2–11.6%</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">75 MW 1 h → 5 MW 8 h</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">% of 1 MW sold flat all day</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Which value channels this scenario opens</div>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px">
+      <div style="background: #F6E4D2; border: 1px solid #B85C00; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font: 600 13px 'IBM Plex Mono', monospace; color: #8A4500">C1 · open</span>
+        <span style="font: 600 15px Archivo, sans-serif">Within-day spread</span>
+        <span style="font-size: 13px; color: #5A3A1C">all battery revenue today</span>
+      </div>
+      <div style="border: 1px dashed #B9C4C0; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 6px; color: #5B6964">
+        <span style="font: 600 13px 'IBM Plex Mono', monospace">C2 · closed</span>
+        <span style="font: 600 15px Archivo, sans-serif; color: #18221F">Between-day shift</span>
+        <span style="font-size: 13px">SoC resets daily · opens S1+S2</span>
+      </div>
+      <div style="border: 1px dashed #B9C4C0; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 6px; color: #5B6964">
+        <span style="font: 600 13px 'IBM Plex Mono', monospace">C3 · capped</span>
+        <span style="font: 600 15px Archivo, sans-serif; color: #18221F">Scarcity peaks</span>
+        <span style="font-size: 13px">price cap 90</span>
+      </div>
+      <div style="border: 1px dashed #B9C4C0; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 6px; color: #5B6964">
+        <span style="font: 600 13px 'IBM Plex Mono', monospace">C4 · closed</span>
+        <span style="font: 600 15px Archivo, sans-serif; color: #18221F">Uncertainty</span>
+        <span style="font-size: 13px">perfect demand foresight</span>
+      </div>
+      <div style="border: 1px dashed #B9C4C0; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 6px; color: #5B6964">
+        <span style="font: 600 13px 'IBM Plex Mono', monospace">C5 · closed</span>
+        <span style="font: 600 15px Archivo, sans-serif; color: #18221F">Strategic response</span>
+        <span style="font-size: 13px">generators frozen · opens S4</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Compare mode · same battery across rungs (25 MW · 8 h)</div>
+    <div style="overflow-x: auto; background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px">
+      <table style="border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; font-variant-numeric: tabular-nums">
+        <thead>
+          <tr style="background: #F3F6F5; color: #5B6964; font: 600 12px 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: .05em">
+            <th style="text-align: left; padding: 10px 14px">Metric</th><th style="text-align: right; padding: 10px 14px">S0</th><th style="text-align: right; padding: 10px 14px">S1</th><th style="text-align: right; padding: 10px 14px">S2</th><th style="text-align: right; padding: 10px 14px">S3</th><th style="text-align: right; padding: 10px 14px">S4</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-top: 1px solid #D3DBD8"><td style="padding: 10px 14px">Mean price</td><td style="text-align: right; padding: 10px 14px">−1.7%</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td></tr>
+          <tr style="border-top: 1px solid #D3DBD8"><td style="padding: 10px 14px">Consumer bill</td><td style="text-align: right; padding: 10px 14px">−2.8%</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td></tr>
+          <tr style="border-top: 1px solid #D3DBD8"><td style="padding: 10px 14px">Generator profit</td><td style="text-align: right; padding: 10px 14px">−8.4%</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td></tr>
+          <tr style="border-top: 1px solid #D3DBD8"><td style="padding: 10px 14px">Yield per MW</td><td style="text-align: right; padding: 10px 14px">5.2%</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td></tr>
+          <tr style="border-top: 1px solid #D3DBD8"><td style="padding: 10px 14px">Full-power hours / day</td><td style="text-align: right; padding: 10px 14px">3.9</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td><td style="text-align: right; padding: 10px 14px; color: #8A9893">not run</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

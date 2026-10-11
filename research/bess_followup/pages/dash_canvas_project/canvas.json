@@ -1,0 +1,30 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-10T10:40:00Z"},
+  "title": "BESS Dashboard Canvas",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 260, "w": 1280, "h": 1180, "title": "1 · Structure and controls", "expand": "fill"},
+    "Overview.dc.html": {"x": 1360, "y": 260, "w": 1280, "h": 1180, "title": "2 · Scenario overview", "expand": "fill"},
+    "Policy.dc.html": {"x": 0, "y": 1920, "w": 1280, "h": 1240, "title": "3 · Policy view: who pays", "expand": "fill"},
+    "Trader.dc.html": {"x": 1360, "y": 1920, "w": 1280, "h": 1240, "title": "4 · Trader view: what a MW earns", "expand": "fill"},
+    "Mechanism.dc.html": {"x": 0, "y": 3640, "w": 1280, "h": 1160, "title": "5 · Mechanism: one day up close", "expand": "fill"},
+    "Health.dc.html": {"x": 1360, "y": 3640, "w": 1280, "h": 1160, "title": "6 · Model health: can we trust it", "expand": "fill"}
+  },
+  "order": ["Main.dc.html", "Overview.dc.html", "Policy.dc.html", "Trader.dc.html", "Mechanism.dc.html", "Health.dc.html"],
+  "notes": {
+    "rowA": {"x": 0, "y": 0, "text": "Structure: framework → pages → controls", "kind": "title1", "maxW": 2640},
+    "rowB": {"x": 0, "y": 1660, "text": "Audience views: policy maker vs battery trader", "kind": "title1", "maxW": 2640},
+    "rowC": {"x": 0, "y": 3380, "text": "Mechanism and trust", "kind": "title1", "maxW": 2640},
+    "qA1": {"x": 2720, "y": 260, "w": 380, "fill": "teal", "text": "Open question: is the scenario the top-level switch (every page re-renders for S0…S4), or is scenario comparison its own page? Mock assumes top-level switch plus a compare mode on the overview."},
+    "qA2": {"x": 2720, "y": 640, "w": 380, "fill": "blue", "text": "Open question: third axis? Add policy outcomes (bill, peak, emissions once solar exists) as rows next to the five value channels, or keep them only in the policy view."},
+    "qA3": {"x": 2720, "y": 1020, "w": 380, "fill": "green", "text": "Only S0 has data. S1–S4 tiles are drawn in their 'not run' state on purpose: the page should make missing scenarios obvious, never blank or zero."},
+    "qB1": {"x": 2720, "y": 1920, "w": 380, "fill": "teal", "text": "Open question: heatmap cell = mean paired effect, with hatching when the 95% CI crosses zero. Or show CI width as cell size? Hatching is easier to read."},
+    "qB2": {"x": 2720, "y": 2300, "w": 380, "fill": "orange", "text": "Trader view needs the revenue-by-channel split. Today it is 100% within-day spread by construction. The split only becomes informative from S1 (carry-over) and S3 (solar)."},
+    "qB3": {"x": 2720, "y": 2680, "w": 380, "fill": "blue", "text": "Replace 'cycles/day' with full-power hours as the headline. Real S0 range is 0.9–5.1 h/day; the 0.6-cycle flag goes."},
+    "qC1": {"x": 2720, "y": 3640, "w": 380, "fill": "teal", "text": "Week strip needs multi-day episodes (S1). Bid-curve inspector works from existing data: dispatch.npz already stores bids and offered quantities per hour."},
+    "qC2": {"x": 2720, "y": 4020, "w": 380, "fill": "orange", "text": "Health page gates the rest: if learned / achievable is below some threshold for a config, should its tiles elsewhere show a warning chip? Proposal: yes, below 80%."}
+  },
+  "designSystems": []
+}

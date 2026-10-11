@@ -1,0 +1,276 @@
+<title>Learning to Trade Power</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F2F5F4; --panel:#FFFFFF; --ink:#18221F; --mut:#56645E; --faint:#8A9893; --line:#D8DFDC;
+  --bat:#B45309; --bat-soft:#F7E7D6; --gen:#2D5B88; --gen-soft:#DFE8F2; --base:#7D8A85;
+  --good:#2E7D4F; --bad:#9A3B2E; --sel:#2563EB;
+  --c1:#E7B27A; --c2:#D08A3C; --c3:#B45309; --c4:#6E3600; --c5:#3B1D00;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){color-scheme:dark;
+    --bg:#121716; --panel:#1B2220; --ink:#E3E9E6; --mut:#A2AFAA; --faint:#73817B; --line:#2D3734;
+    --bat:#F29A4A; --bat-soft:#3A2A1A; --gen:#8DB3DD; --gen-soft:#1D2B3A; --base:#8F9C97;
+    --good:#6CC08E; --bad:#E58A7C; --sel:#6B9BFF;
+    --c1:#7A4A1E; --c2:#B36A26; --c3:#F29A4A; --c4:#F7C08A; --c5:#FFE2C4;}
+}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#121716; --panel:#1B2220; --ink:#E3E9E6; --mut:#A2AFAA; --faint:#73817B; --line:#2D3734;
+  --bat:#F29A4A; --bat-soft:#3A2A1A; --gen:#8DB3DD; --gen-soft:#1D2B3A; --base:#8F9C97;
+  --good:#6CC08E; --bad:#E58A7C; --sel:#6B9BFF;
+  --c1:#7A4A1E; --c2:#B36A26; --c3:#F29A4A; --c4:#F7C08A; --c5:#FFE2C4;}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "IBM Plex Sans",system-ui,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:20px;padding-block:40px 80px;display:flex;flex-direction:column;gap:48px}
+h1{font:800 clamp(30px,5.5vw,48px)/1.05 Archivo,sans-serif;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font:800 26px/1.15 Archivo,sans-serif;margin:0;text-wrap:balance}
+h3{font:600 17px/1.3 Archivo,sans-serif;margin:0;text-wrap:balance}
+p{margin:0;max-width:68ch}
+.eyebrow{font:500 12px/1 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.lede{color:var(--mut);font-size:17px}
+.mono{font-family:"IBM Plex Mono",monospace}
+header{display:flex;flex-direction:column;gap:12px}
+.answers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.ans{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.ans .q{font:600 12px "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.ans .a{font:800 28px/1.1 Archivo,sans-serif}
+.ans ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;color:var(--mut)}
+.ans b{color:var(--ink);font-weight:600}
+section{display:flex;flex-direction:column;gap:18px}
+.sh{display:flex;flex-direction:column;gap:6px;border-top:2px solid var(--ink);padding-top:14px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.fig{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.fig .note{font-size:13px;color:var(--mut)}
+.chart{width:100%;height:auto;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--mut)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:0;border-top:2px solid;display:inline-block}
+.swb{width:10px;height:10px;display:inline-block;border-radius:2px}
+.pending{font-size:13px;color:var(--bat);background:var(--bat-soft);border-radius:5px;padding:8px 10px}
+.bars{display:grid;grid-template-columns:150px minmax(0,1fr) 44px;gap:8px 12px;align-items:center;font-variant-numeric:tabular-nums}
+.bars .lbl{font:12.5px "IBM Plex Mono",monospace}
+.track{position:relative;height:18px;background:var(--bg);border-radius:2px}
+.fill{position:absolute;left:0;top:0;bottom:0;background:var(--bat);border-radius:2px}
+.ref{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.val{font:600 13px "IBM Plex Mono",monospace;text-align:right}
+.big{font:800 40px/1 Archivo,sans-serif;font-variant-numeric:tabular-nums}
+.ws{display:grid;grid-template-columns:96px minmax(0,1fr) 52px;gap:3px 10px;align-items:center;font:12px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.ws .hd{color:var(--mut);font-size:11px}
+.wtrack{position:relative;height:14px}
+.wtrack .axis{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--faint)}
+.seg{position:absolute;top:2px;height:10px}
+.netdot{position:absolute;top:3px;width:8px;height:8px;border-radius:50%;background:var(--ink);transform:translateX(-4px)}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:var(--mut)}
+select{min-height:44px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);padding:0 10px;font:14px "IBM Plex Mono",monospace}
+select:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.tile{background:var(--bg);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column}
+.tile span{font-size:12px;color:var(--mut)}
+.tile b{font:600 18px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.obs{display:flex;gap:6px;flex-wrap:wrap}
+.obs span{border:1px solid var(--bat);background:var(--bat-soft);color:var(--bat);border-radius:3px;padding:2px 7px;font:500 11.5px "IBM Plex Mono",monospace}
+.sub{font:600 11.5px "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase}
+footer{font-size:13px;color:var(--mut);display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:16px}
+@media (max-width:760px){
+  .answers,.grid2{grid-template-columns:minmax(0,1fr)}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .bars{grid-template-columns:118px minmax(0,1fr) 40px}
+  .ws{grid-template-columns:78px minmax(0,1fr) 46px}
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">easy_marl · 3 RL generators + 1 RL battery · 20 battery sizes × 10 seeds</div>
+  <h1>Can RL agents learn to trade power, and what do batteries do to the market?</h1>
+  <p class="lede">Three generators learn to bid until their behaviour settles, then are frozen. A PPO battery is added and trained. Every effect compares the same seed with and without the battery. All values are relative, because the simulator's prices are made up.</p>
+</header>
+
+<div class="answers">
+  <div class="ans">
+    <span class="q">A · Can RL agents learn the right trading behaviour?</span>
+    <span class="a">Mostly, with gaps</span>
+    <ul>
+      <li><b>200 of 200</b> batteries buy cheaper than they sell.</li>
+      <li>In 4 spot checks the battery earns <b>74–97%</b> of the best schedule an optimiser finds.</li>
+      <li>Generators settle on prices about <b>2.1×</b> what bidding at cost would give.</li>
+    </ul>
+  </div>
+  <div class="ans">
+    <span class="q">B · What do batteries do to the market?</span>
+    <span class="a">Small, and it moves money</span>
+    <ul>
+      <li>Consumer bill falls by up to <b>2.8%</b>; mean price by up to <b>1.7%</b>.</li>
+      <li>Generator profit falls in every size, by up to <b>8.4%</b>.</li>
+      <li>Gains and losses net to about zero (<b>−0.2 to +0.2%</b> of the bill).</li>
+    </ul>
+  </div>
+</div>
+
+<section id="a">
+  <div class="sh"><span class="eyebrow">Question A</span><h2>Do the agents learn the right behaviour?</h2></div>
+  <div class="grid2">
+    <div class="fig">
+      <h3>The battery gets most of what is available</h3>
+      <div class="bars" id="spot"></div>
+      <div class="note">Battery profit as % of the best open-loop schedule an optimiser (CMA-ES) found in the same market, which accounts for the battery's own effect on price. Line marks 100%.</div>
+      <div class="pending">Only 4 of 200 batteries benchmarked so far. The full benchmark takes about 25 minutes and has not been run.</div>
+    </div>
+    <div class="fig">
+      <h3>It always buys low and sells high</h3>
+      <div><span class="big" id="bls">200 / 200</span></div>
+      <div id="capchart"></div>
+      <div class="note">Each dot is one battery: mean sell price minus mean buy price, as % of the no-battery mean price. Larger batteries capture less because their own trades move the price.</div>
+    </div>
+    <div class="fig">
+      <h3>Most learning happens in the first rounds, and round 5 slips back</h3>
+      <div id="curves"></div>
+      <div class="legend" id="curveleg"></div>
+      <div class="note">Median yield per MW across its 40 runs (4 durations × 10 seeds) after each 20k-day training round, one line per battery power. Every size scores lower in round 5 than in round 4, and seed-to-seed spread stays wide (1.3–4.5 points), so the final policy is not always the best one trained.</div>
+    </div>
+    <div class="fig">
+      <h3>Generators learned prices about twice the at-cost level</h3>
+      <div id="genchart"></div>
+      <div class="legend"><span><i class="sw" style="border-color:var(--gen)"></i>learned price</span><span><i class="sw" style="border-color:var(--base);border-top-style:dashed"></i>if every generator bid its cost</span></div>
+      <div class="note" id="gennote"></div>
+    </div>
+  </div>
+</section>
+
+<section id="b">
+  <div class="sh"><span class="eyebrow">Question B</span><h2>What does a battery do to the market?</h2></div>
+  <div class="fig">
+    <h3>Consumers and the battery gain what generators lose</h3>
+    <div class="legend"><span><i class="swb" style="background:var(--gen)"></i>consumers save</span><span><i class="swb" style="background:var(--bat)"></i>battery earns</span><span><i class="swb" style="background:var(--bad)"></i>generators lose</span><span><i class="swb" style="background:var(--ink);border-radius:50%"></i>net</span></div>
+    <div class="ws" id="welfare"></div>
+    <div class="note">Change against the same-seed market without a battery, as % of that market's consumer bill, mean of 10 seeds. Scale runs from −5% to +5%.</div>
+  </div>
+  <div class="grid2">
+    <div class="fig">
+      <h3>Mid-size batteries cut the price most</h3>
+      <div id="dpchart"></div>
+      <div class="legend" id="dpleg"></div>
+      <div class="note">Change in mean price with 95% bootstrap interval, by power, one series per duration.</div>
+    </div>
+    <div class="fig">
+      <h3>Where in the day the price moves</h3>
+      <div class="ctrl"><div class="field"><label for="hP">Power</label><select id="hP"></select></div><div class="field"><label for="hH">Duration</label><select id="hH"></select></div></div>
+      <div id="hourly"></div>
+      <div class="note">Hourly price change, % of the no-battery mean price, mean of 10 seeds. Below zero: the battery sells into that hour. Above: it buys.</div>
+    </div>
+  </div>
+</section>
+
+<section id="run">
+  <div class="sh"><span class="eyebrow">Drill-down</span><h2>One battery: what it saw, bid and got</h2></div>
+  <div class="fig">
+    <div class="ctrl"><div class="field"><label for="rP">Power</label><select id="rP"></select></div><div class="field"><label for="rH">Duration</label><select id="rH"></select></div><div class="field"><label for="rS">Seed</label><select id="rS"></select></div></div>
+    <div class="tiles" id="rtiles"></div>
+    <div class="grid2" id="rpanels"></div>
+  </div>
+</section>
+
+<footer>
+  <span>Data: outputs/bess_sweep/full on branch main of eugkim0120/MARL (dispatch.npz, results.csv, paired_effects.csv, per-round evaluations). Generators frozen, so this is the short-run effect before anyone adapts.</span>
+  <span>Known limits: each simulated day resets the battery to 50% charge with a penalty for ending below it; the battery sees the day's demand before bidding.</span>
+</footer>
+</div>
+
+<script type="application/json" id="runs">@@RUNS@@</script>
+<script type="application/json" id="agg">@@AGG@@</script>
+<script>
+(function(){
+"use strict";
+const D=JSON.parse(document.getElementById('runs').textContent), A=JSON.parse(document.getElementById('agg').textContent);
+const RUN={}; D.runs.forEach(r=>RUN[r.id]=r);
+const P=[5,10,25,50,75], H=[1,2,4,8], S=[42,43,44,45,46,47,48,49,50,51];
+const rid=(p,h,s)=>`p${p}_d${h}_s${s}`;
+const sg=(v,d=1)=>(v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(d);
+const PR={min:-60,max:160};
+
+function chart(o){
+  const W=o.w||480,Hh=o.h||160,L=36,R=8,T=10,B=20,n=o.n||24;
+  const x=o.x||(i=>L+(i+0.5)*(W-L-R)/n), bw=(W-L-R)/n*0.7;
+  const y=v=>T+(1-(Math.max(o.min,Math.min(o.max,v))-o.min)/(o.max-o.min))*(Hh-T-B);
+  let s=`<svg class="chart" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="${o.aria||''}">`;
+  (o.ticks||[]).forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" style="stroke:var(--line)"/><text x="${L-5}" y="${y(t)+4}" text-anchor="end" font-size="11" style="fill:var(--mut)" font-family="IBM Plex Mono">${o.tf?o.tf(t):t}</text>`; });
+  if(o.zero!==undefined) s+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" style="stroke:var(--faint)"/>`;
+  (o.bars||[]).forEach(b=>b.vals.forEach((v,i)=>{ if(Math.abs(v)<0.5) return; const y0=y(0),y1=y(b.down?-v:v); s+=`<rect x="${x(i)-bw/2}" y="${Math.min(y0,y1)}" width="${bw}" height="${Math.abs(y1-y0)}" style="fill:${b.c}" opacity="${b.op||.45}"/>`; }));
+  (o.lines||[]).forEach(l=>{ s+=`<polyline points="${l.v.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ')}" fill="none" style="stroke:${l.c}" stroke-width="${l.w||2}" ${l.d?'stroke-dasharray="5 4"':''} stroke-linejoin="round"/>`; if(l.dots) l.v.forEach((v,i)=>{ s+=`<circle cx="${x(i)}" cy="${y(v)}" r="3" style="fill:${l.c}"/>`; }); });
+  if(o.hline!==undefined) s+=`<line x1="${L}" x2="${W-R}" y1="${y(o.hline)}" y2="${y(o.hline)}" style="stroke:var(--bad)" stroke-dasharray="3 3"/>`;
+  (o.raw||[]).forEach(f=>s+=f(x,y));
+  (o.xl||[[0,'00'],[6,'06'],[12,'12'],[18,'18'],[23,'23h']]).forEach(([i,t])=>{ s+=`<text x="${x(i)}" y="${Hh-4}" text-anchor="middle" font-size="11" style="fill:var(--mut)" font-family="IBM Plex Mono">${t}</text>`; });
+  return s+'</svg>';
+}
+const leg=items=>items.map(([c,t,k])=>`<span>${k==='b'?`<i class="swb" style="background:${c};opacity:.55"></i>`:`<i class="sw" style="border-color:${c};${k==='d'?'border-top-style:dashed':''}"></i>`}${t}</span>`).join('');
+const opt=(arr,sel,f)=>arr.map(v=>`<option value="${v}" ${v===sel?'selected':''}>${f?f(v):v}</option>`).join('');
+
+/* A1 spot checks */
+document.getElementById('spot').innerHTML=A.spot.map(s=>`<span class="lbl">${s.cfg}</span><div class="track"><div class="fill" style="width:${s.v}%"></div><div class="ref" style="left:calc(100% - 2px)"></div></div><span class="val">${s.v}%</span>`).join('');
+
+/* A2 spread captured dots */
+const bls=D.runs.length; document.getElementById('bls').textContent=`${A.cfg.reduce((n,c)=>n+Math.round(c.buy_lt_sell*10),0)} / ${bls}`;
+document.getElementById('capchart').innerHTML=chart({w:480,h:170,min:0,max:160,ticks:[0,50,100,150],tf:t=>t+'%',n:5,x:i=>36+(i+0.5)*(480-44)/5,xl:P.map((p,i)=>[i,p+' MW']),aria:'Spread captured per battery by power',
+  raw:[(x,y)=>D.runs.map(r=>{ const i=P.indexOf(r.p); const jit=((r.s-46.5)/10+(H.indexOf(r.h)-1.5)/14)*60; return `<circle cx="${x(i)+jit}" cy="${y(r.m.cap)}" r="2.6" style="fill:var(--bat)" opacity=".55"/>`; }).join('')]});
+
+/* A3 median learning curves */
+const med=a=>{ const s=[...a].sort((p,q)=>p-q), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; };
+const curveCols=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)'];
+const curves=P.map(p=>[0,1,2,3,4].map(k=>med(D.runs.filter(r=>r.p===p).map(r=>r.curve[k]))));
+document.getElementById('curves').innerHTML=chart({w:480,h:180,min:0,max:14,ticks:[0,5,10],tf:t=>t+'%',n:5,xl:[[0,'round 1'],[1,'2'],[2,'3'],[3,'4'],[4,'round 5']],lines:curves.map((v,i)=>({v,c:curveCols[i],dots:true})),aria:'Median learning curve by battery power'});
+document.getElementById('curveleg').innerHTML=leg(P.map((p,i)=>[curveCols[i],p+' MW']));
+
+/* A4 generators vs at-cost */
+const mean=k=>[...Array(24).keys()].map(h=>A.gens.reduce((s,g)=>s+g[k][h],0)/A.gens.length);
+document.getElementById('genchart').innerHTML=chart({w:480,h:180,min:0,max:160,ticks:[0,50,100,150],tf:t=>t+'%',lines:[{v:mean('comp'),c:'var(--base)',d:true},{v:mean('learned'),c:'var(--gen)',w:2.4}],aria:'Learned price versus at-cost price by hour'});
+const ratios=A.gens.map(g=>g.ratio), mk=[0,1,2].map(i=>A.gens.reduce((s,g)=>s+g.markup[i],0)/A.gens.length);
+document.getElementById('gennote').textContent=`Mean of 10 pretrained markets, % of the learned mean price. Learned ÷ at-cost price: ${Math.min(...ratios).toFixed(2)}–${Math.max(...ratios).toFixed(2)} across seeds. Average bid above cost: cheapest plant ${sg(mk[0])}, middle ${sg(mk[1])}, dearest ${sg(mk[2])} price units. Whether 2× is right for three strategic firms needs a Nash benchmark, not yet computed.`;
+
+/* B1 welfare split */
+const sc=v=>v/5*50;
+let w=`<span class="hd">size</span><span class="hd" style="display:flex;justify-content:space-between"><span>−5%</span><span>0</span><span>+5%</span></span><span class="hd" style="text-align:right">net</span>`;
+A.cfg.forEach(c=>{ const pos1=sc(c.cons), pos2=sc(c.bat), neg=sc(-c.gen);
+  w+=`<span>${c.p} MW · ${c.h} h</span><div class="wtrack" role="img" aria-label="${c.p} MW ${c.h} h: consumers ${sg(c.cons,2)}, battery ${sg(c.bat,2)}, generators ${sg(c.gen,2)}, net ${sg(c.net,2)} percent of bill"><div class="axis"></div>
+  <div class="seg" style="left:50%;width:${Math.max(0,pos1)}%;background:var(--gen)"></div>
+  <div class="seg" style="left:${50+Math.max(0,pos1)}%;width:${pos2}%;background:var(--bat)"></div>
+  <div class="seg" style="right:50%;width:${neg}%;background:var(--bad)"></div>
+  <div class="netdot" style="left:${50+sc(c.net)}%"></div></div><span style="text-align:right">${sg(c.net,2)}</span>`; });
+document.getElementById('welfare').innerHTML=w;
+
+/* B2 price change with CI */
+const dcol=['var(--c1)','var(--c2)','var(--c3)','var(--c4)'];
+document.getElementById('dpchart').innerHTML=chart({w:480,h:200,min:-2.5,max:0.5,ticks:[-2,-1,0],tf:t=>t+'%',n:5,zero:0,x:i=>36+(i+0.5)*(480-44)/5,xl:P.map((p,i)=>[i,p+' MW']),aria:'Change in mean price by battery size with intervals',
+  raw:[(x,y)=>A.cfg.map(c=>{ const i=P.indexOf(c.p), j=H.indexOf(c.h), cx=x(i)+(j-1.5)*14; return `<line x1="${cx}" x2="${cx}" y1="${y(c.dp[1])}" y2="${y(c.dp[2])}" style="stroke:${dcol[j]}" stroke-width="2"/><circle cx="${cx}" cy="${y(c.dp[0])}" r="4" style="fill:${dcol[j]}"/>`; }).join('')]});
+document.getElementById('dpleg').innerHTML=leg(H.map((h,j)=>[dcol[j],h+' h']));
+
+/* B3 hourly */
+const hP=document.getElementById('hP'), hH=document.getElementById('hH');
+hP.innerHTML=opt(P,25,v=>v+' MW'); hH.innerHTML=opt(H,4,v=>v+' h');
+function drawHourly(){ const c=A.cfg.find(c=>c.p===+hP.value&&c.h===+hH.value);
+  document.getElementById('hourly').innerHTML=chart({w:480,h:180,min:-25,max:10,ticks:[-20,-10,0,10],tf:t=>(t>0?'+':'')+t+'%',zero:0,bars:[{vals:c.hourly.map(v=>Math.max(0,v)),c:'var(--bat)',op:.7},{vals:c.hourly.map(v=>Math.min(0,v)),c:'var(--gen)',op:.7}],aria:'Hourly price change'}); }
+hP.onchange=hH.onchange=drawHourly; drawHourly();
+
+/* drill-down */
+const rP=document.getElementById('rP'), rH=document.getElementById('rH'), rS=document.getElementById('rS');
+rP.innerHTML=opt(P,25,v=>v+' MW'); rH.innerHTML=opt(H,8,v=>v+' h'); rS.innerHTML=opt(S,43,v=>v+(D.base[v].converged?'':' · gens not settled'));
+function panel(t,c,body){ return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0"><span class="sub" style="color:${c}">${t}</span>${body}</div>`; }
+function drawRun(){
+  const r=RUN[rid(+rP.value,+rH.value,+rS.value)], b=D.base[r.s];
+  document.getElementById('rtiles').innerHTML=[['Yield per MW',r.m.yld.toFixed(1)+'%'],['Full-power h/day',r.m.fph.toFixed(1)],['Δ mean price',sg(r.m.dp)+'%'],['Ends the day at',r.m.socend.toFixed(0)+'% charge']].map(([l,v])=>`<div class="tile"><span>${l}</span><b>${v}</b></div>`).join('');
+  document.getElementById('rpanels').innerHTML=
+   panel('1 · What it saw','var(--gen)',`${chart({min:0,max:100,ticks:[50,100],tf:t=>t+'%',h:120,bars:[{vals:b.demand,c:'var(--gen)',op:.55}],aria:'Demand seen'})}
+     <div class="obs"><span>power ÷ 50 = ${(r.p/50).toFixed(2)}</span><span>energy ÷ 1200 = ${(r.p*r.h/1200).toFixed(2)}</span><span>ref ÷ 40 = 0.75</span></div>
+     <div style="font-size:13px;color:var(--mut)">Today's demand (% of the 150 MW fleet) and three fixed numbers. It does not see its charge level, any price, or other bids.</div>`)+
+   panel('2 · What it bid','var(--bat)',`${chart({...PR,ticks:[0,100],tf:t=>t+'%',h:130,zero:0,lines:[{v:r.offer,c:'var(--bat)',dots:true,w:1.5}],aria:'Bid price per hour'})}
+     ${chart({min:-100,max:100,ticks:[-100,0,100],tf:t=>(t>0?'+':'')+t,h:110,bars:[{vals:r.sellq,c:'var(--bat)',op:.3},{vals:r.chg,c:'var(--gen)',down:true,op:.6}],aria:'Quantities'})}
+     <div class="legend">${leg([['var(--bat)','bid price, % of mean'],['var(--bat)','offered to sell, % of MW','b'],['var(--gen)','bought, % of MW','b']])}</div>`)+
+   panel('3 · What happened','var(--ink)',`${chart({...PR,ticks:[0,100],tf:t=>t+'%',h:140,zero:0,bars:[{vals:r.dis,c:'var(--bat)',op:.35}],lines:[{v:b.price,c:'var(--base)',d:true},{v:r.price,c:'var(--ink)'}],aria:'Price with and without battery'})}
+     <div class="legend">${leg([['var(--base)','no battery','d'],['var(--ink)','with battery'],['var(--bat)','sold, % of MW','b']])}</div>
+     ${chart({min:0,max:100,ticks:[0,50,100],tf:t=>t+'%',h:90,hline:50,lines:[{v:r.soc,c:'var(--bat)',w:2.4}],aria:'Charge level'})}`)+
+   panel('4 · How it learned','var(--mut)',`${chart({min:-6,max:20,ticks:[0,10,20],tf:t=>t+'%',n:5,h:130,zero:0,xl:[[0,'round 1'],[2,'3'],[4,'round 5']],lines:[{v:r.curve,c:'var(--bat)',dots:true}],aria:'Learning curve'})}
+     <div style="font-size:13px;color:var(--mut)">Yield per MW in the evaluation after each training round.</div>`);
+}
+rP.onchange=rH.onchange=rS.onchange=drawRun; drawRun();
+})();
+</script>

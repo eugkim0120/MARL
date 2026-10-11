@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard structure</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#B85C00}a:hover{color:#8A4500}
+</style>
+</helmet>
+<div style="background: #F3F6F5; color: #18221F; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.55; min-height: 1180px; box-sizing: border-box; padding: 40px 32px 56px">
+<div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px">
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font: 500 12px/1 'IBM Plex Mono', monospace; letter-spacing: .08em; text-transform: uppercase; color: #B85C00">Dashboard plan · structure</div>
+    <h1 style="margin: 0; font: 800 40px/1.05 Archivo, sans-serif">Three questions, one switch</h1>
+    <p style="margin: 0; max-width: 70ch; color: #4E5C57">Every page answers one of three questions for the scenario selected at the top. Pages follow the framework: scenario ladder (rows of experiments), value channels (why a battery earns), and audience (policy maker or trader).</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Global controls (sticky bar)</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 16px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="scn" style="font-size: 12px; color: #5B6964">Scenario</label>
+        <div style="display: flex; gap: 4px" id="scn">
+          <button style="min-height: 44px; padding: 0 14px; border: 1px solid #18221F; background: #18221F; color: #FFFFFF; border-radius: 4px; font: 500 14px 'IBM Plex Sans', sans-serif">S0 Today</button>
+          <button style="min-height: 44px; padding: 0 14px; border: 1px dashed #8A9893; background: transparent; color: #5B6964; border-radius: 4px; font: 500 14px 'IBM Plex Sans', sans-serif">S1 Battery fixes</button>
+          <button style="min-height: 44px; padding: 0 14px; border: 1px dashed #8A9893; background: transparent; color: #5B6964; border-radius: 4px; font: 500 14px 'IBM Plex Sans', sans-serif">S2 Weekly load</button>
+          <button style="min-height: 44px; padding: 0 14px; border: 1px dashed #8A9893; background: transparent; color: #5B6964; border-radius: 4px; font: 500 14px 'IBM Plex Sans', sans-serif">S3 Solar</button>
+          <button style="min-height: 44px; padding: 0 14px; border: 1px dashed #8A9893; background: transparent; color: #5B6964; border-radius: 4px; font: 500 14px 'IBM Plex Sans', sans-serif">S4 Adaptive gens</button>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="cfg" style="font-size: 12px; color: #5B6964">Battery</label>
+        <select id="cfg" style="min-height: 44px; padding: 0 12px; border: 1px solid #B9C4C0; border-radius: 4px; background: #FFFFFF; font: 14px 'IBM Plex Sans', sans-serif; color: #18221F"><option>All 20 sizes</option><option>25 MW · 4 h</option></select>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="unit" style="font-size: 12px; color: #5B6964">Units</label>
+        <select id="unit" style="min-height: 44px; padding: 0 12px; border: 1px solid #B9C4C0; border-radius: 4px; background: #FFFFFF; font: 14px 'IBM Plex Sans', sans-serif; color: #18221F"><option>% of no-battery market</option><option>per MW of battery</option></select>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="cmp" style="font-size: 12px; color: #5B6964">Compare</label>
+        <select id="cmp" style="min-height: 44px; padding: 0 12px; border: 1px solid #B9C4C0; border-radius: 4px; background: #FFFFFF; font: 14px 'IBM Plex Sans', sans-serif; color: #18221F"><option>Off</option><option>Against previous rung</option><option>Against S0</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Pages and the question each answers</div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px">
+      <a href="Overview.dc.html" style="text-decoration: none; color: inherit; background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; color: #5B6964">2 · everyone</span>
+        <span style="font: 600 20px/1.2 Archivo, sans-serif">Overview</span>
+        <span style="color: #4E5C57">What did adding a battery change in this scenario, and which value channels are open?</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">ladder strip · 4 headline effects · channel grid</span>
+      </a>
+      <a href="Policy.dc.html" style="text-decoration: none; color: inherit; background: #DCE7F2; border: 1px solid #2D5B88; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; color: #2D5B88">3 · policy maker</span>
+        <span style="font: 600 20px/1.2 Archivo, sans-serif">Who pays</span>
+        <span style="color: #34465A">Do consumers save, who loses margin, does the peak fall?</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #34465A">welfare split · effect heatmaps · peak and price shape</span>
+      </a>
+      <a href="Trader.dc.html" style="text-decoration: none; color: inherit; background: #F6E4D2; border: 1px solid #B85C00; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; color: #8A4500">4 · battery trader</span>
+        <span style="font: 600 20px/1.2 Archivo, sans-serif">What a MW earns</span>
+        <span style="color: #5A3A1C">Which size and duration earns most per MW, from which channel, and how is it used?</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5A3A1C">yield curve · channel split · full-power hours</span>
+      </a>
+      <a href="Mechanism.dc.html" style="text-decoration: none; color: inherit; background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; color: #5B6964">5 · analyst</span>
+        <span style="font: 600 20px/1.2 Archivo, sans-serif">Mechanism</span>
+        <span style="color: #4E5C57">Why did it happen? One battery, one week, hour by hour.</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">week strip · dispatch stack · bid curve inspector</span>
+      </a>
+      <a href="Health.dc.html" style="text-decoration: none; color: inherit; background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; color: #5B6964">6 · analyst</span>
+        <span style="font: 600 20px/1.2 Archivo, sans-serif">Model health</span>
+        <span style="color: #4E5C57">Is the learner good enough that the numbers mean something?</span>
+        <span style="font: 12px 'IBM Plex Mono', monospace; color: #5B6964">learned vs achievable · convergence · seed spread</span>
+      </a>
+      <div style="border: 1px dashed #B9C4C0; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 8px; color: #5B6964">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace">data</span>
+        <span style="font: 600 20px/1.2 Archivo, sans-serif; color: #18221F">Tables and files</span>
+        <span>results.csv, paired_effects.csv, per-config dispatch. Kept as today.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <div style="font: 600 13px/1 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: #5B6964">Framework the pages hang on</div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px">
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font: 600 16px Archivo, sans-serif">Scenario ladder</span>
+        <span style="font: 13px/1.7 'IBM Plex Mono', monospace; color: #4E5C57; white-space: pre-line">S0 today
+S1 + SoC carry-over, wear cost, 10–90% window
+S2 + weekly load shape
+S3 + solar with weather draw
+S4 + adaptive generators</span>
+        <span style="font-size: 13px; color: #5B6964">Each rung re-pretrains generators and has its own no-battery baseline.</span>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font: 600 16px Archivo, sans-serif">Value channels</span>
+        <span style="font: 13px/1.7 'IBM Plex Mono', monospace; color: #4E5C57; white-space: pre-line">C1 within-day spread
+C2 between-day shift
+C3 scarcity peaks
+C4 uncertainty / imbalance
+C5 strategic response</span>
+        <span style="font-size: 13px; color: #5B6964">Only C1 is open in S0.</span>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #D3DBD8; border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font: 600 16px Archivo, sans-serif">Reading rules</span>
+        <span style="font-size: 14px; color: #4E5C57; white-space: pre-line">Every effect is battery minus the same-seed baseline.
+Solid = 95% CI excludes zero; hatched = it does not.
+Units are relative only: % of the no-battery market, or yield per MW.
+A scenario that has not run is shown as dashed, never as zero.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

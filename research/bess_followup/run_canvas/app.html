@@ -1,0 +1,665 @@
+<title>BESS Run Canvas</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --canvas:#E9EDEC; --dot:#C9D1CE; --panel:#FFFFFF; --panel-2:#F5F7F6; --ink:#18221F; --mut:#58665F; --faint:#8A9893;
+  --line:#D9DFDD; --sel:#2563EB; --sel-soft:rgba(37,99,235,.12);
+  --bat:#B45309; --bat-soft:#F7E7D6; --gen:#2D5B88; --gen-soft:#DFE8F2; --base:#7D8A85;
+  --good:#2E7D4F; --good-soft:#DCEFE3; --bad:#9A3B2E; --bad-soft:#F5DEDA;
+  --c1:#B45309; --c2:#2D5B88; --c3:#2E7D4F; --c4:#8E3B8E; --c5:#9A3B2E; --c6:#4B5563;
+  --frame:rgba(255,255,255,.45); --shadow:0 1px 2px rgba(20,30,28,.08),0 4px 14px rgba(20,30,28,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --canvas:#141918; --dot:#2A3331; --panel:#1C2220; --panel-2:#222A28; --ink:#E3E9E6; --mut:#A3B0AB; --faint:#74827C;
+    --line:#2F3936; --sel:#6B9BFF; --sel-soft:rgba(107,155,255,.16);
+    --bat:#F29A4A; --bat-soft:#3A2A1A; --gen:#8DB3DD; --gen-soft:#1D2B3A; --base:#8F9C97;
+    --good:#6CC08E; --good-soft:#173022; --bad:#E58A7C; --bad-soft:#3A1E1A;
+    --c1:#F29A4A; --c2:#8DB3DD; --c3:#6CC08E; --c4:#D59BD5; --c5:#E58A7C; --c6:#B8C2BE;
+    --frame:rgba(255,255,255,.03); --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --canvas:#141918; --dot:#2A3331; --panel:#1C2220; --panel-2:#222A28; --ink:#E3E9E6; --mut:#A3B0AB; --faint:#74827C;
+  --line:#2F3936; --sel:#6B9BFF; --sel-soft:rgba(107,155,255,.16);
+  --bat:#F29A4A; --bat-soft:#3A2A1A; --gen:#8DB3DD; --gen-soft:#1D2B3A; --base:#8F9C97;
+  --good:#6CC08E; --good-soft:#173022; --bad:#E58A7C; --bad-soft:#3A1E1A;
+  --c1:#F29A4A; --c2:#8DB3DD; --c3:#6CC08E; --c4:#D59BD5; --c5:#E58A7C; --c6:#B8C2BE;
+  --frame:rgba(255,255,255,.03); --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+.app{--app-sel:var(--sel);--app-mut:var(--mut)}
+body{background:var(--canvas);color:var(--ink);font:13px/1.45 "IBM Plex Sans",system-ui,sans-serif;overflow:hidden}
+button,select,input{font:inherit;color:inherit}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);grid-template-columns:252px minmax(0,1fr) 288px;grid-template-areas:"top top top" "left canvas right"}
+/* toolbar */
+.top{grid-area:top;display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);min-height:48px;box-sizing:border-box;overflow-x:auto}
+.brand{font:800 15px Archivo,sans-serif;white-space:nowrap;margin-right:8px;display:flex;align-items:center;gap:8px}
+.brand i{width:10px;height:18px;border:2px solid var(--bat);border-radius:2px;position:relative;display:inline-block}
+.brand i::after{content:"";position:absolute;left:1px;right:1px;bottom:1px;height:55%;background:var(--bat)}
+.sep{width:1px;height:24px;background:var(--line);margin:0 4px;flex:none}
+.tb{min-width:36px;height:36px;padding:0 10px;border:1px solid transparent;background:transparent;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none}
+.tb:hover{background:var(--panel-2)}
+.tb[aria-pressed="true"]{background:var(--sel-soft);color:var(--sel);border-color:var(--sel)}
+.tb:focus-visible,.card:focus-visible,.rowbtn:focus-visible,.sec-h:focus-visible,.chip:focus-visible,.hm-cell:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+.tb svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8}
+.zoom{font-variant-numeric:tabular-nums;min-width:52px}
+.spacer{flex:1}
+.mobile-only{display:none}
+/* panels */
+.panel{background:var(--panel);overflow:auto;min-height:0}
+.left{grid-area:left;border-right:1px solid var(--line);display:flex;flex-direction:column}
+.right{grid-area:right;border-left:1px solid var(--line)}
+.tabs{display:flex;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tab{flex:1;height:40px;border:0;background:transparent;border-bottom:2px solid transparent;cursor:pointer;font-weight:600;color:var(--mut)}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.pbody{padding:12px;display:flex;flex-direction:column;gap:14px}
+.lab{font:600 11px "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{min-height:32px;padding:0 10px;border:1px solid var(--line);background:var(--panel);border-radius:16px;cursor:pointer;font:500 12px "IBM Plex Mono",monospace}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:var(--mut)}
+select,input[type=number]{min-height:36px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:0 8px}
+.list{display:flex;flex-direction:column;gap:2px}
+.rowbtn{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;min-height:40px;padding:4px 8px;border:0;background:transparent;border-radius:6px;cursor:pointer;text-align:left}
+.rowbtn:hover{background:var(--panel-2)}
+.rowbtn[aria-current="true"]{background:var(--sel-soft)}
+.rowbtn .n{font:500 12px "IBM Plex Mono",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rowbtn .v{font:500 12px "IBM Plex Mono",monospace;color:var(--bat);font-variant-numeric:tabular-nums}
+.rowbtn .add{font:600 16px/1 "IBM Plex Mono",monospace;color:var(--mut);width:24px;text-align:center}
+.layer-ind{padding-left:22px}
+.hint{font-size:12px;color:var(--mut)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:12px}
+.kv dt{color:var(--mut)} .kv dd{margin:0;font-family:"IBM Plex Mono",monospace;text-align:right;font-variant-numeric:tabular-nums}
+.btnrow{display:flex;flex-wrap:wrap;gap:6px}
+.btn{min-height:36px;padding:0 12px;border:1px solid var(--line);background:var(--panel);border-radius:6px;cursor:pointer}
+.btn:hover{background:var(--panel-2)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.check{display:flex;align-items:center;gap:8px;min-height:32px;font-size:13px}
+.check input{width:18px;height:18px;accent-color:var(--sel)}
+/* canvas */
+.canvas{grid-area:canvas;position:relative;overflow:hidden;touch-action:none;cursor:default;
+  background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px)}
+.canvas.hand,.canvas.panning{cursor:grab}.canvas.panning{cursor:grabbing}
+.world{position:absolute;left:0;top:0;transform-origin:0 0}
+.frame{position:absolute;border:1px dashed var(--faint);background:var(--frame);border-radius:10px}
+.frame-t{position:absolute;left:0;top:-30px;font:600 13px "IBM Plex Sans",sans-serif;color:var(--mut);padding:4px 6px;border-radius:4px;cursor:move;white-space:nowrap;user-select:none}
+.frame.sel{border-color:var(--sel);border-style:solid}.frame.sel .frame-t{color:var(--sel)}
+.card{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);overflow:hidden}
+.card.sel{outline:2px solid var(--sel);outline-offset:1px}
+.card-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 12px 8px;cursor:move;user-select:none;border-bottom:1px solid var(--line)}
+.kind{font:600 10.5px "IBM Plex Mono",monospace;letter-spacing:.07em;text-transform:uppercase;padding:2px 6px;border-radius:3px;display:inline-block}
+.k-run{background:var(--bat-soft);color:var(--bat)} .k-base{background:var(--gen-soft);color:var(--gen)} .k-cmp{background:var(--panel-2);color:var(--mut)}
+.card-title{font:600 14px Archivo,sans-serif;margin-top:4px}
+.headline{text-align:right}
+.headline b{font:800 22px/1 Archivo,sans-serif;color:var(--bat);font-variant-numeric:tabular-nums;display:block}
+.headline span{font-size:11px;color:var(--mut)}
+.sec{border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0}
+.sec-h{width:100%;display:flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;border:0;background:transparent;cursor:pointer;text-align:left}
+.sec-h:hover{background:var(--panel-2)}
+.sec-h .tw{width:10px;color:var(--mut);font-size:10px}
+.sec-h .st{font:600 11px "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase}
+.sec-h .ss{font-size:11.5px;color:var(--mut);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-in{color:var(--gen)} .st-act{color:var(--bat)} .st-out{color:var(--ink)} .st-learn{color:var(--mut)}
+.sec-b{padding:2px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--mut)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:14px;height:0;border-top:2px solid}
+.swb{width:10px;height:10px}
+.mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.met{background:var(--panel-2);border-radius:5px;padding:6px 8px;display:flex;flex-direction:column;gap:1px}
+.met span{font-size:10.5px;color:var(--mut)}
+.met b{font:600 13px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.obs{display:flex;gap:6px;align-items:flex-end}
+.obs-static{display:flex;gap:4px}
+.obs-static div{border:1px solid var(--bat);background:var(--bat-soft);border-radius:3px;padding:2px 5px;font:500 10.5px "IBM Plex Mono",monospace;color:var(--bat);white-space:nowrap}
+.hp{font:11.5px/1.6 "IBM Plex Mono",monospace;color:var(--mut)}
+.warn{font-size:11.5px;color:var(--bad)}
+.hm{display:grid;gap:3px;font:500 11.5px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.hm-cell{height:34px;border:0;border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;font:inherit}
+.hm-h{color:var(--mut);font-size:10.5px;text-align:center;align-self:end}
+.vtab{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.vtab th{font:600 10.5px "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);text-align:left;padding:4px 4px;border-bottom:1px solid var(--line)}
+.vtab td{padding:5px 4px;border-bottom:1px solid var(--line);font-family:"IBM Plex Mono",monospace}
+.bar{height:8px;background:var(--bat);border-radius:2px}
+/* artboards: dashboard page mockups, always drawn in the light page palette */
+.ab{position:absolute;color-scheme:light;
+  --ink:#18221F; --mut:#58665F; --faint:#8A9893; --line:#D9DFDD; --panel:#FFFFFF; --panel-2:#F3F6F5;
+  --bat:#B45309; --bat-soft:#F7E7D6; --gen:#2D5B88; --gen-soft:#DFE8F2; --base:#7D8A85; --good:#2E7D4F; --bad:#9A3B2E;
+  --c1:#B45309; --c2:#2D5B88; --c3:#2E7D4F; --c4:#8E3B8E; --c5:#9A3B2E; --c6:#4B5563}
+.ab-t{position:absolute;left:0;top:-34px;display:flex;gap:8px;align-items:baseline;font:600 15px "IBM Plex Sans",sans-serif;color:var(--mut);cursor:move;user-select:none;white-space:nowrap;padding:4px 2px}
+.app .ab-t{color:var(--app-mut)}
+.ab-t small{font:500 12px "IBM Plex Mono",monospace;opacity:.8}
+.ab-body{background:#F3F6F5;color:#18221F;box-shadow:0 2px 6px rgba(20,30,28,.12),0 10px 30px rgba(20,30,28,.10);font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif;overflow:hidden}
+.ab-body *{pointer-events:none}
+.ab-body a[data-page],.ab-body [data-pick]{pointer-events:auto;cursor:pointer}
+.ab-body a[data-page] *{pointer-events:none}
+.ab.sel .ab-body{outline:3px solid var(--app-sel);outline-offset:2px}
+.ab.sel .ab-t{color:var(--app-sel)}
+.note{position:absolute;background:#FFF1B8;color:#3D3510;border-radius:4px;box-shadow:0 2px 8px rgba(40,35,10,.18);font-size:15px;line-height:1.5}
+.note.blue{background:#D6E6FF;color:#132A4D}.note.green{background:#D5F0DC;color:#12351F}.note.orange{background:#FFE0C2;color:#4A2A0C}
+.note-h{padding:10px 14px 0;font:600 11px "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;opacity:.75;cursor:move;user-select:none}
+.note p{margin:0;padding:6px 14px 14px}
+.note.sel{outline:2px solid var(--app-sel);outline-offset:2px}
+.toast{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:6px;font-size:12.5px;pointer-events:none;opacity:0;transition:opacity .2s}
+.toast.on{opacity:1}
+.minimap-note{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));font:11px "IBM Plex Mono",monospace;color:var(--mut);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+.principles li{margin-bottom:6px}
+.principles b{font-weight:600}
+@media (prefers-reduced-motion: reduce){.toast{transition:none}}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "canvas"}
+  .left,.right{position:fixed;top:calc(48px + env(safe-area-inset-top,0px));bottom:0;width:min(320px,88vw);z-index:20;box-shadow:var(--shadow);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .left{left:0} .right{right:0}
+  .mobile-only{display:inline-flex}
+  .desk-only{display:none}
+}
+</style>
+
+<div class="app" id="app">
+  <header class="top" role="toolbar" aria-label="Canvas tools">
+    <button class="tb mobile-only" id="btnLeft" aria-label="Runs and layers" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+    <div class="brand"><i aria-hidden="true"></i>BESS Run Canvas</div>
+    <div class="sep desk-only"></div>
+    <button class="tb" id="toolSel" aria-pressed="true" title="Select (V)"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z"/></svg><span class="desk-only">Select</span></button>
+    <button class="tb" id="toolHand" aria-pressed="false" title="Pan (H)"><svg viewBox="0 0 24 24"><path d="M8 13V5a1.5 1.5 0 013 0v6m0-1V4a1.5 1.5 0 013 0v7m0-5a1.5 1.5 0 013 0v8c0 4-3 7-7 7h-1c-3 0-4-2-6-5l-2-3a1.5 1.5 0 012.5-1.5L8 13"/></svg><span class="desk-only">Pan</span></button>
+    <div class="sep"></div>
+    <label for="addSel" class="desk-only hint" style="margin-right:2px">Add</label>
+    <select id="addSel" aria-label="Add a card">
+      <option value="">Add card…</option>
+      <option value="run">Run: one battery</option>
+      <option value="baseline">Market without battery</option>
+      <option value="overlay">Overlay: compare runs</option>
+      <option value="heatmap">Heatmap: all 20 sizes</option>
+      <option value="variants">Training variants</option>
+      <option value="note">Sticky note</option>
+    </select>
+    <div class="sep"></div>
+    <button class="tb" id="zOut" aria-label="Zoom out" title="Zoom out (−)"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    <button class="tb zoom mono" id="zLbl" title="Fit everything (0)">100%</button>
+    <button class="tb" id="zIn" aria-label="Zoom in" title="Zoom in (+)"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button>
+    <div class="spacer"></div>
+    <button class="tb desk-only" id="btnReset" title="Restore the starting layout">Reset layout</button>
+    <button class="tb mobile-only" id="btnRight" aria-label="Inspector" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></button>
+  </header>
+
+  <aside class="panel left" id="left" aria-label="Runs and layers">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabRuns" aria-selected="true" aria-controls="paneRuns">Runs</button>
+      <button class="tab" role="tab" id="tabLayers" aria-selected="false" aria-controls="paneLayers">Layers</button>
+    </div>
+    <div class="pbody" id="paneRuns" role="tabpanel" aria-labelledby="tabRuns"></div>
+    <div class="pbody" id="paneLayers" role="tabpanel" aria-labelledby="tabLayers" hidden></div>
+  </aside>
+
+  <main class="canvas" id="canvas" aria-label="Canvas. Drag empty space to pan, pinch or Ctrl+scroll to zoom." tabindex="-1">
+    <div class="world" id="world"></div>
+    <div class="minimap-note" id="status" aria-live="polite"></div>
+    <div class="toast" id="toast" role="status"></div>
+  </main>
+
+  <aside class="panel right" id="right" aria-label="Inspector"></aside>
+</div>
+
+<script type="application/json" id="data">@@DATA@@</script>
+<script type="application/json" id="pages">@@PAGES@@</script>
+<script>
+(function(){
+"use strict";
+const D = JSON.parse(document.getElementById('data').textContent);
+const PAGES = JSON.parse(document.getElementById('pages').textContent);
+const RUN = {}; D.runs.forEach(r => RUN[r.id] = r);
+const POWERS=[5,10,25,50,75], DURS=[1,2,4,8], SEEDS=[42,43,44,45,46,47,48,49,50,51];
+const VARIANT_DEF = {
+  control:'n_steps 24 · batch 24 · ent 0.01 · log σ 0',
+  bigroll:'n_steps 256 · batch 64',
+  bigroll_lowstd:'n_steps 256 · batch 64 · log σ −1',
+  noent:'ent 0',
+  all:'n_steps 256 · batch 64 · ent 0 · log σ −1',
+  all_long:'as “all”, 3× training days',
+};
+const METRICS = {
+  yld:{label:'Yield per MW',unit:'%',dec:1,dir:1,hue:'bat',note:'battery profit per MW per day, % of 1 MW sold flat all day at the no-battery mean price'},
+  fph:{label:'Full-power hours / day',unit:'h',dec:1,dir:1,hue:'bat',note:'discharge MWh ÷ MW'},
+  cap:{label:'Spread captured',unit:'%',dec:0,dir:1,hue:'bat',note:'mean discharge price − mean charge price, % of no-battery mean price'},
+  dp:{label:'Δ mean price',unit:'%',dec:1,dir:-1,hue:'gen',note:'vs same-seed market without battery'},
+  dbill:{label:'Δ consumer bill',unit:'%',dec:1,dir:-1,hue:'gen',note:'vs same-seed market without battery'},
+  dgp:{label:'Δ generator profit',unit:'%',dec:1,dir:-1,hue:'bad',note:'vs same-seed market without battery'},
+  socend:{label:'End-of-day SoC',unit:'%',dec:0,dir:1,hue:'bat',note:'below 50% pays the terminal penalty'},
+};
+const fmt = (v,d=1) => (v<0?'−':'') + Math.abs(v).toFixed(d);
+const sgn = (v,d=1) => (v>0?'+':v<0?'−':'') + Math.abs(v).toFixed(d);
+const runLabel = r => `${r.p} MW · ${r.h} h · s${r.s}`;
+const runId = (p,h,s) => `p${p}_d${h}_s${s}`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- charts (one scale per chart type, shared by every card) ---------- */
+const PR = {min:-60, max:160, ticks:[0,100]};
+function chart(o){
+  const W=o.w||336, H=o.h||110, L=30, R=6, T=8, B=16;
+  const n=o.n||24, x=i=>L+(i+0.5)*(W-L-R)/n, bw=(W-L-R)/n*0.7;
+  const y=v=>T+(1-(Math.max(o.min,Math.min(o.max,v))-o.min)/(o.max-o.min))*(H-T-B);
+  let s=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria||'chart')}">`;
+  (o.ticks||[]).forEach(t=>{ s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" style="stroke:var(--line)" stroke-width="1"/><text x="${L-4}" y="${y(t)+3.5}" text-anchor="end" font-size="9.5" style="fill:var(--mut)" font-family="IBM Plex Mono">${o.tickFmt?o.tickFmt(t):t}</text>`; });
+  if(o.zero!==undefined) s+=`<line x1="${L}" x2="${W-R}" y1="${y(o.zero)}" y2="${y(o.zero)}" style="stroke:var(--faint)" stroke-width="1"/>`;
+  (o.bars||[]).forEach(b=>{ b.vals.forEach((v,i)=>{ if(Math.abs(v)<0.5) return; const y0=y(b.base||0), y1=y((b.base||0)+(b.down?-v:v)); s+=`<rect x="${x(i)-bw/2}" y="${Math.min(y0,y1)}" width="${bw}" height="${Math.abs(y1-y0)}" style="fill:${b.color}" opacity="${b.op||0.4}"/>`; }); });
+  (o.lines||[]).forEach(l=>{ const pts=l.vals.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '); s+=`<polyline points="${pts}" fill="none" style="stroke:${l.color}" stroke-width="${l.w||1.8}" ${l.dash?'stroke-dasharray="4 3"':''} stroke-linejoin="round"/>`;
+    if(l.dots) l.vals.forEach((v,i)=>{ s+=`<circle cx="${x(i)}" cy="${y(v)}" r="2.6" style="fill:${l.color}"/>`; }); });
+  if(o.hline!==undefined) s+=`<line x1="${L}" x2="${W-R}" y1="${y(o.hline)}" y2="${y(o.hline)}" style="stroke:var(--bad)" stroke-dasharray="3 3"/>`;
+  (o.xl||[[0,'00'],[6,'06'],[12,'12'],[18,'18'],[23,'23h']]).forEach(([i,t])=>{ s+=`<text x="${x(i)}" y="${H-3}" text-anchor="middle" font-size="9.5" style="fill:var(--mut)" font-family="IBM Plex Mono">${t}</text>`; });
+  return s+'</svg>';
+}
+const legend = items => `<div class="legend">${items.map(([c,t,k])=>`<span>${k==='b'?`<i class="swb" style="background:${c};opacity:.5"></i>`:`<i class="sw" style="border-color:${c};${k==='d'?'border-top-style:dashed':''}"></i>`}${t}</span>`).join('')}</div>`;
+
+/* ---------- state ---------- */
+const KEY='bess-run-canvas-v2';
+let uid=1; const nid=()=> 'i'+(uid++);
+function defaultState(){
+  uid=1;
+  const items=[]; const AB=1280, GX=160;
+  const ab=(page,row,col)=>{ items.push({id:nid(),type:'artboard',page,row,x:col*(AB+GX),dy:0,w:AB,run:page==='Explorer'?runId(25,8,43):undefined}); };
+  ab('Main',0,0); ab('Overview',0,1); ab('Policy',0,2);
+  ab('Trader',1,0); ab('Mechanism',1,1); ab('Health',1,2);
+  ab('Explorer',2,0);
+  const NX=3*(AB+GX);
+  const note=(row,text,color)=>items.push({id:nid(),type:'note',row,x:NX,dy:0,w:340,text,color});
+  QUESTIONS.forEach(q=>note(q.row,q.text,q.color));
+  const fr={id:nid(),type:'frame',title:'Components the pages are built from · live data',members:[]}; items.push(fr);
+  const comp=(o,i)=>{ o.id=nid(); o.row=2; o.x=AB+GX+24+i*384; o.dy=24; o.w=360; items.push(o); fr.members.push(o.id); };
+  comp({type:'run',run:runId(25,8,43),show:{in:true,act:true,out:true,learn:true}},0);
+  comp({type:'baseline',seed:43,show:{in:false,out:true,learn:true}},1);
+  comp({type:'overlay',runs:[runId(25,1,43),runId(25,2,43),runId(25,4,43),runId(25,8,43)],series:'soc'},2);
+  comp({type:'heatmap',metric:'yld',seed:'all'},3);
+  comp({type:'variants'},4);
+  items.forEach(i=>{ if(i.y===undefined) i.y=0; });
+  return {items, view:{tx:40,ty:70,k:0.3}, sel:null, tool:'select', tab:'layers', filt:{p:25,h:null,s:43}, _laid:false};
+}
+const QUESTIONS=[
+  {row:0,page:'Main',color:'yellow',text:'Is the scenario the top-level switch (every page re-renders for S0…S4), or is scenario comparison its own page? Mock assumes a top-level switch plus a compare mode on the overview.'},
+  {row:0,page:'Main',color:'blue',text:'Third axis? Add policy outcomes (bill, peak, emissions once solar exists) next to the five value channels, or keep them only in the policy view.'},
+  {row:0,page:'Overview',color:'green',text:'Only S0 has data. S1–S4 are drawn in their not-run state on purpose: missing scenarios should be obvious, never blank or zero.'},
+  {row:0,page:'Policy',color:'yellow',text:'Heatmap cell = mean paired effect, hatched when the 95% CI crosses zero. Or show CI width as cell size? Hatching reads faster.'},
+  {row:1,page:'Trader',color:'orange',text:'Revenue by channel is 100% within-day spread in S0 by construction. The split only becomes informative from S1 (carry-over) and S3 (solar).'},
+  {row:1,page:'Trader',color:'blue',text:'Full-power hours replace cycles/day as the headline. Real S0 range is 0.9–5.1 h/day; the 0.6-cycle flag goes.'},
+  {row:1,page:'Mechanism',color:'yellow',text:'Week strip needs multi-day episodes (S1). The bid-curve inspector works from existing data: dispatch.npz already stores bids and offers per hour.'},
+  {row:1,page:'Health',color:'orange',text:'If learned ÷ achievable is below 80% for a battery, should its tiles on other pages carry a warning chip? Proposal: yes.'},
+  {row:2,page:'Explorer',color:'green',text:'New page. Is the run explorer a page of the static dashboard (as drawn), or should the dashboard itself be this canvas, with pages as artboards and runs as cards?'},
+  {row:2,page:'Explorer',color:'blue',text:'Explorer picks one run. Should it pin a second run side by side (A/B), or is the overlay card enough for comparison?'},
+];
+const PAGE_META={
+  Main:{n:1,name:'Structure',q:'How is the dashboard organised, and what controls apply everywhere?',src:'none (navigation)'},
+  Overview:{n:2,name:'Overview',q:'What did a battery change in this scenario, and which value channels are open?',src:'paired_effects.csv'},
+  Policy:{n:3,name:'Who pays',q:'Do consumers save, who loses margin, does the peak fall?',src:'results.csv, paired_effects.csv'},
+  Trader:{n:4,name:'Trader',q:'Which size earns most per MW, from which channel, and how hard is it used?',src:'results.csv'},
+  Mechanism:{n:5,name:'Mechanism',q:'Why did it happen, hour by hour?',src:'dispatch.npz'},
+  Health:{n:6,name:'Model health',q:'Is the learner good enough to trust the numbers?',src:'CMA-ES spot check, convergence.json'},
+  Explorer:{n:7,name:'Run explorer',q:'What did one trained battery see, bid and get?',src:'dispatch.npz, metrics.json, per-round eval'},
+};
+let S;
+try{ const raw=localStorage.getItem(KEY); S = raw ? JSON.parse(raw) : null; }catch(e){ S=null; }
+if(!S || !Array.isArray(S.items)) S=defaultState();
+else { uid = 1 + Math.max(0,...S.items.map(i=>+String(i.id).slice(1)||0)); }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+const item = id => S.items.find(i=>i.id===id);
+
+/* ---------- card renderers ---------- */
+function sec(it,key,cls,title,sub,body){
+  const open=it.show&&it.show[key];
+  return `<div class="sec"><button class="sec-h" data-toggle="${key}" aria-expanded="${!!open}"><span class="tw" aria-hidden="true">${open?'▾':'▸'}</span><span class="st ${cls}">${title}</span><span class="ss">${sub}</span></button>${open?`<div class="sec-b">${body()}</div>`:''}</div>`;
+}
+function metCell(label,v,dec,unit,goodSign){ const c = goodSign===0?'':(v*goodSign>0?'pos':v*goodSign<0?'neg':''); return `<div class="met"><span>${label}</span><b class="${c}">${goodSign===0?fmt(v,dec):sgn(v,dec)}${unit}</b></div>`; }
+
+function renderRun(it){
+  const r=RUN[it.run]; if(!r) return `<div class="sec-b warn">Run ${esc(it.run)} not found in the data.</div>`;
+  const b=D.base[r.s];
+  const head=`<div class="card-h" data-drag><div><span class="kind k-run">Run</span><div class="card-title">${runLabel(r)}</div></div><div class="headline"><b>${r.m.yld.toFixed(1)}%</b><span>yield per MW</span></div></div>`;
+  const inputs=sec(it,'in','st-in','Inputs',`obs 27 · ${b.converged?'gens settled':'gens still moving'}`,()=>`
+    <div class="hint">What the policy sees each morning: today's demand (24 numbers, % of 150 MW fleet) plus three static numbers.</div>
+    <div class="obs"><div style="flex:1">${chart({min:0,max:100,ticks:[50,100],tickFmt:t=>t+'%',h:74,bars:[{vals:b.demand,color:'var(--gen)',op:0.55}],aria:'Demand profile seen by the battery'})}</div>
+    <div class="obs-static" aria-label="Static observation"><div>P ${(r.p/50).toFixed(2)}</div><div>E ${(r.p*r.h/1200).toFixed(2)}</div><div>ref 0.75</div></div></div>
+    <div class="hp">PPO · lr 3e-4 · γ 0.99 · n_steps 24 · batch 24 · ent 0.01 · MLP 4×32<br>5 rounds × 20k days · generators frozen (pretrained seed ${r.s})<br>reward: Σ price·(dis − chg) − 0.01·(bid − ref)² − 80/MWh below 50% at 24:00</div>
+    <div class="hint">Not observed: state of charge, any price, other agents' bids.</div>`);
+  const acts=sec(it,'act','st-act','Policy output',`bids for 24 h`,()=>`
+    ${chart({...PR,h:96,lines:[{vals:r.offer,color:'var(--bat)',dots:true,w:1.4}],zero:0,ticks:[0,100],tickFmt:t=>t+'%',aria:'Battery offer price per hour'})}
+    ${chart({min:-100,max:100,ticks:[-100,0,100],tickFmt:t=>(t>0?'+':'')+t,h:84,bars:[{vals:r.sellq,color:'var(--bat)',op:0.25},{vals:r.chg,color:'var(--gen)',down:true,op:0.55}],aria:'Sell quantity offered and energy bought per hour'})}
+    ${legend([['var(--bat)','offer / buy price, % of mean'],['var(--bat)','sell offered, % of MW','b'],['var(--gen)','bought, % of MW','b']])}`);
+  const out=sec(it,'out','st-out','Outcomes',`Δ price ${sgn(r.m.dp)}% · fph ${r.m.fph.toFixed(1)}`,()=>`
+    ${chart({...PR,h:104,zero:0,tickFmt:t=>t+'%',bars:[{vals:r.dis,color:'var(--bat)',op:0.35,base:0}],lines:[{vals:b.price,color:'var(--base)',dash:true},{vals:r.price,color:'var(--ink)'}],aria:'Hourly price with and without battery'})}
+    ${legend([['var(--base)','no battery','d'],['var(--ink)','with battery'],['var(--bat)','discharged','b']])}
+    ${chart({min:0,max:100,ticks:[0,50,100],tickFmt:t=>t+'%',h:66,hline:50,lines:[{vals:r.soc,color:'var(--bat)',w:2.2}],aria:'State of charge'})}
+    <div class="mgrid">
+      ${metCell('Full-power h',r.m.fph,1,'',0)}${metCell('Spread capt.',r.m.cap,0,'%',0)}${metCell('End SoC',r.m.socend,0,'%',0)}
+      ${metCell('Δ price',r.m.dp,1,'%',-1)}${metCell('Δ bill',r.m.dbill,1,'%',-1)}${metCell('Δ gen profit',r.m.dgp,1,'%',0)}
+    </div>
+    ${r.m.socend<50?`<div class="warn">Ends below 50%: pays the terminal penalty.</div>`:''}`);
+  const learn=sec(it,'learn','st-learn','Learning',`5 rounds · last ${r.curve[4].toFixed(1)}%`,()=>`
+    ${chart({min:-6,max:20,ticks:[0,10,20],tickFmt:t=>t+'%',n:5,h:80,xl:[[0,'r1'],[1,'r2'],[2,'r3'],[3,'r4'],[4,'r5']],lines:[{vals:r.curve,color:'var(--bat)',dots:true}],zero:0,aria:'Yield per MW after each training round'})}
+    <div class="hint">Yield per MW in the evaluation after each 20k-day training round.</div>`);
+  return head+inputs+acts+out+learn;
+}
+function renderBaseline(it){
+  const b=D.base[it.seed];
+  const head=`<div class="card-h" data-drag><div><span class="kind k-base">Market</span><div class="card-title">No battery · seed ${it.seed}</div></div><div class="headline"><b style="color:var(--gen)">${b.converged?'settled':'moving'}</b><span>pretraining</span></div></div>`;
+  return head+
+  sec(it,'in','st-in','Inputs','3 generators · demand',()=>`${chart({min:0,max:100,ticks:[50,100],tickFmt:t=>t+'%',h:74,bars:[{vals:b.demand,color:'var(--gen)',op:0.55}],aria:'Demand'})}
+    <div class="hp">Costs 20 / 30 / 40 · 50 MW each · cap 90 · floor −10<br>20 rounds × 20k days pretraining, then frozen</div>`)+
+  sec(it,'out','st-out','Generator bids and price','what the battery walks into',()=>`
+    ${chart({...PR,h:104,zero:0,tickFmt:t=>t+'%',lines:[{vals:b.bids[0],color:'var(--c3)',w:1.3},{vals:b.bids[1],color:'var(--c2)',w:1.3},{vals:b.bids[2],color:'var(--c4)',w:1.3},{vals:b.price,color:'var(--ink)',w:2}],aria:'Generator bids and clearing price'})}
+    ${legend([['var(--c3)','G1 cost 20'],['var(--c2)','G2 cost 30'],['var(--c4)','G3 cost 40'],['var(--ink)','clearing price']])}
+    ${chart({min:0,max:100,ticks:[0,100],tickFmt:t=>t+'%',h:70,lines:[{vals:b.gen[0],color:'var(--c3)'},{vals:b.gen[1],color:'var(--c2)'},{vals:b.gen[2],color:'var(--c4)'}],aria:'Generator output, % of capacity'})}
+    <div class="hint">Output per plant, % of 50 MW.</div>`)+
+  sec(it,'learn','st-learn','Pretraining',`last change ${b.conv[b.conv.length-1].toFixed(2)} · tol ${b.tol}`,()=>`
+    ${chart({min:0,max:0.8,ticks:[0,0.4,0.8],tickFmt:t=>t.toFixed(1),n:b.conv.length,h:80,xl:[[0,'r2'],[b.conv.length-1,'r'+(b.conv.length+1)]],hline:b.tol,lines:[{vals:b.conv,color:'var(--gen)',dots:true,w:1.4}],aria:'Generator policy change per round'})}
+    <div class="hint">Mean change in generator bids between rounds. Red line = tolerance.</div>`);
+}
+const SERIES={soc:{label:'State of charge',min:0,max:100,ticks:[0,50,100]},price:{label:'Price with battery',...PR},offer:{label:'Offer / buy price',...PR},dis:{label:'Discharge, % of MW',min:0,max:100,ticks:[0,100]},curve:{label:'Learning curve',min:-6,max:20,ticks:[0,10,20],n:5}};
+function renderOverlay(it){
+  const se=SERIES[it.series]; const runs=it.runs.map(id=>RUN[id]).filter(Boolean);
+  const lines=runs.map((r,i)=>({vals:r[it.series],color:`var(--c${i%6+1})`,dots:it.series==='curve'}));
+  const extra = it.series==='price' && runs[0] ? [{vals:D.base[runs[0].s].price,color:'var(--base)',dash:true}] : [];
+  return `<div class="card-h" data-drag><div><span class="kind k-cmp">Overlay</span><div class="card-title">${se.label}</div></div><div class="headline"><span>${runs.length} runs</span></div></div>
+  <div class="sec-b" style="padding-top:10px">${chart({...se,h:150,tickFmt:t=>it.series==='curve'||it.series==='soc'||it.series==='dis'?t+'%':t+'%',zero:se.min<0?0:undefined,lines:extra.concat(lines),n:se.n||24,xl:it.series==='curve'?[[0,'r1'],[4,'r5']]:undefined,aria:'Overlay of '+se.label})}
+  ${legend(runs.map((r,i)=>[`var(--c${i%6+1})`,runLabel(r)]).concat(extra.length?[['var(--base)','no battery','d']]:[]))}
+  <div class="hint">Pick runs and series in the inspector.</div></div>`;
+}
+function hmVal(metric,p,h,seed){ if(seed==='all'){ let s=0,n=0; SEEDS.forEach(sd=>{ const r=RUN[runId(p,h,sd)]; if(r){s+=r.m[metric];n++;} }); return s/n; } const r=RUN[runId(p,h,seed)]; return r?r.m[metric]:NaN; }
+function renderHeatmap(it){
+  const M=METRICS[it.metric]; const vals=[]; DURS.forEach(h=>POWERS.forEach(p=>vals.push(hmVal(it.metric,p,h,it.seed))));
+  const vmax=Math.max(...vals.map(Math.abs))||1;
+  const col={bat:'180,83,9',gen:'45,91,136',bad:'154,59,46'}[M.hue];
+  let g=`<div class="hm" style="grid-template-columns:30px repeat(5,minmax(0,1fr))"><span></span>${POWERS.map(p=>`<span class="hm-h">${p} MW</span>`).join('')}`;
+  DURS.forEach(h=>{ g+=`<span class="hm-h" style="align-self:center">${h} h</span>`; POWERS.forEach(p=>{ const v=hmVal(it.metric,p,h,it.seed); const a=Math.min(1,Math.abs(v)/vmax)*0.85; const s=it.seed==='all'?43:it.seed;
+    g+=`<button class="hm-cell" data-addrun="${runId(p,h,s)}" style="background:rgba(${col},${a.toFixed(2)});color:${a>0.55?'#fff':'var(--ink)'}" aria-label="${p} MW ${h} h: ${fmt(v,M.dec)}${M.unit}. Add run card">${fmt(v,M.dec)}</button>`; }); });
+  g+='</div>';
+  return `<div class="card-h" data-drag><div><span class="kind k-cmp">Heatmap</span><div class="card-title">${M.label}</div></div><div class="headline"><span>${it.seed==='all'?'mean of 10 seeds':'seed '+it.seed}</span></div></div>
+  <div class="sec-b" style="padding-top:10px">${g}<div class="hint">${esc(M.note)}. Tap a cell to add that run${it.seed==='all'?' (seed 43)':''}.</div></div>`;
+}
+function renderVariants(it){
+  const groups={}; D.probe.forEach(p=>{ const k=`${p.p} MW · ${p.h} h · s${p.s}`; (groups[k]=groups[k]||[]).push(p); });
+  let h=''; Object.entries(groups).forEach(([k,rows])=>{ h+=`<tr><th colspan="3" style="padding-top:10px">${k}</th></tr>`; rows.sort((a,b)=>b.net_vs_control-a.net_vs_control).forEach(p=>{ const w=Math.min(100,p.net_vs_control/1.6);
+    h+=`<tr><td title="${esc(VARIANT_DEF[p.variant]||'')}">${esc(p.variant)}</td><td style="width:45%"><div class="bar" style="width:${w}%;${p.variant==='control'?'background:var(--base)':''}"></div></td><td style="text-align:right">${p.net_vs_control.toFixed(0)}%</td></tr>`; }); });
+  return `<div class="card-h" data-drag><div><span class="kind k-cmp">Training variants</span><div class="card-title">Same battery, different PPO settings</div></div><div class="headline"><span>net revenue vs control</span></div></div>
+  <div class="sec-b" style="padding-top:6px"><table class="vtab"><tbody>${h}</tbody></table>
+  <div class="hp">${Object.entries(VARIANT_DEF).map(([k,v])=>`${k}: ${esc(v)}`).join('<br>')}</div>
+  <div class="hint">One run per variant. Seed 47 shows the same setting can do worse.</div></div>`;
+}
+function renderArtboard(it){
+  const M=PAGE_META[it.page];
+  const body = it.page==='Explorer' ? renderExplorer(it) : PAGES[it.page];
+  return `<div class="ab-t" data-drag>${M.n} · ${esc(M.name)} <small>1280 × auto</small></div><div class="ab-body">${body}</div>`;
+}
+function renderNote(it){ return `<div class="note-h" data-drag>Open question</div><p>${esc(it.text)}</p>`; }
+function pchip(label,key,val,on){ return `<span data-pick="${key}:${val}" style="display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid ${on?'#18221F':'#C3CCC8'};background:${on?'#18221F':'#FFFFFF'};color:${on?'#FFFFFF':'#18221F'};font:500 13px 'IBM Plex Mono',monospace">${label}</span>`; }
+function panel(title,color,sub,inner){ return `<div style="background:#FFFFFF;border:1px solid #D3DBD8;border-radius:6px;padding:18px;display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><span style="font:600 12px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:${color}">${title}</span><span style="font-size:12px;color:#5B6964">${sub}</span></div>${inner}</div>`; }
+function renderExplorer(it){
+  const r=RUN[it.run], b=D.base[r.s];
+  const seedY=SEEDS.map(s=>RUN[runId(r.p,r.h,s)].m.yld); const ymax=Math.max(...seedY,1);
+  const tile=(l,v,c)=>`<div style="background:#FFFFFF;border:1px solid #D3DBD8;border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#5B6964">${l}</span><span style="font:800 22px/1.1 Archivo,sans-serif;color:${c||'#18221F'};font-variant-numeric:tabular-nums">${v}</span></div>`;
+  return `<div style="padding:40px 32px 48px"><div style="max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:22px">
+  <div style="display:flex;flex-direction:column;gap:6px"><div style="font:500 12px/1 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#B45309">Run explorer · S0 · frozen generators</div>
+  <h1 style="margin:0;font:800 34px/1.1 Archivo,sans-serif">${runLabel(r)}</h1>
+  <p style="margin:0;color:#4E5C57;max-width:72ch">One trained battery, evaluated on the same 20 days as its no-battery market. Read left to right: what it saw, what it bid, what happened, how it learned.</p></div>
+  <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;background:#FFFFFF;border:1px solid #D3DBD8;border-radius:6px;padding:12px 16px">
+    <div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:#5B6964;margin-right:4px">Power</span>${POWERS.map(p=>pchip(p+' MW','p',p,p===r.p)).join('')}</div>
+    <div style="display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:#5B6964;margin-right:4px">Duration</span>${DURS.map(h=>pchip(h+' h','h',h,h===r.h)).join('')}</div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:#5B6964;margin-right:4px">Seed</span>${SEEDS.map(s=>pchip(String(s),'s',s,s===r.s)).join('')}</div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px">
+    ${tile('Yield per MW',r.m.yld.toFixed(1)+'%','#B45309')}${tile('Full-power h/day',r.m.fph.toFixed(1))}${tile('Spread captured',r.m.cap.toFixed(0)+'%')}
+    ${tile('Δ mean price',sgn(r.m.dp)+'%','#2D5B88')}${tile('Δ consumer bill',sgn(r.m.dbill)+'%','#2D5B88')}${tile('Δ generator profit',sgn(r.m.dgp)+'%','#9A3B2E')}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+  ${panel('1 · Inputs','#2D5B88','observation, 27 numbers',`
+    ${chart({min:0,max:100,ticks:[50,100],tickFmt:t=>t+'%',w:540,h:120,bars:[{vals:b.demand,color:'var(--gen)',op:0.55}],aria:'Demand seen'})}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;font:500 12px 'IBM Plex Mono',monospace"><span style="border:1px solid #B45309;background:#F7E7D6;color:#B45309;padding:3px 7px;border-radius:3px">power ÷ 50 = ${(r.p/50).toFixed(2)}</span><span style="border:1px solid #B45309;background:#F7E7D6;color:#B45309;padding:3px 7px;border-radius:3px">energy ÷ 1200 = ${(r.p*r.h/1200).toFixed(2)}</span><span style="border:1px solid #B45309;background:#F7E7D6;color:#B45309;padding:3px 7px;border-radius:3px">ref ÷ 40 = 0.75</span></div>
+    <div style="font:12px/1.7 'IBM Plex Mono',monospace;color:#5B6964">PPO · lr 3e-4 · γ 0.99 · n_steps 24 · batch 24 · ent 0.01 · MLP 4×32<br>5 rounds × 20k days · generators frozen from pretrain seed ${r.s} (${b.converged?'settled':'still moving'})</div>
+    <div style="font-size:13px;color:#9A3B2E">Not observed: state of charge, any price, other agents' bids.</div>`)}
+  ${panel('2 · Policy output','#B45309','24 hourly bids',`
+    ${chart({...PR,w:540,h:130,zero:0,tickFmt:t=>t+'%',lines:[{vals:r.offer,color:'var(--bat)',dots:true,w:1.5}],aria:'Offer price per hour'})}
+    ${chart({min:-100,max:100,ticks:[-100,0,100],tickFmt:t=>(t>0?'+':'')+t,w:540,h:110,bars:[{vals:r.sellq,color:'var(--bat)',op:0.3},{vals:r.chg,color:'var(--gen)',down:true,op:0.6}],aria:'Sell offered and bought'})}
+    ${legend([['var(--bat)','offer / buy price, % of mean'],['var(--bat)','sell offered, % of MW','b'],['var(--gen)','bought, % of MW','b']])}`)}
+  ${panel('3 · Outcomes','#18221F',`ends at ${r.m.socend.toFixed(0)}% charge`,`
+    ${chart({...PR,w:540,h:140,zero:0,tickFmt:t=>t+'%',bars:[{vals:r.dis,color:'var(--bat)',op:0.35}],lines:[{vals:b.price,color:'var(--base)',dash:true},{vals:r.price,color:'var(--ink)',w:2}],aria:'Price with and without battery'})}
+    ${legend([['var(--base)','no battery','d'],['var(--ink)','with battery'],['var(--bat)','discharged, % of MW','b']])}
+    ${chart({min:0,max:100,ticks:[0,50,100],tickFmt:t=>t+'%',w:540,h:90,hline:50,lines:[{vals:r.soc,color:'var(--bat)',w:2.4}],aria:'State of charge'})}
+    ${r.m.socend<50?'<div style="font-size:13px;color:#9A3B2E">Ends below 50%: pays the terminal penalty.</div>':''}`)}
+  ${panel('4 · Learning','#58665F','eval after each round, and seed spread',`
+    ${chart({min:-6,max:20,ticks:[0,10,20],tickFmt:t=>t+'%',n:5,w:540,h:120,zero:0,xl:[[0,'round 1'],[1,'2'],[2,'3'],[3,'4'],[4,'round 5']],lines:[{vals:r.curve,color:'var(--bat)',dots:true,w:2}],aria:'Learning curve'})}
+    <div style="display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px;align-items:end;height:90px">${seedY.map((v,i)=>`<div data-pick="s:${SEEDS[i]}" title="seed ${SEEDS[i]}" style="height:${Math.max(4,v/ymax*80)}px;background:${SEEDS[i]===r.s?'#B45309':'#E3C6A6'};border-radius:2px"></div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px;font:11px 'IBM Plex Mono',monospace;color:#5B6964;text-align:center">${SEEDS.map(s=>`<span>${s}</span>`).join('')}</div>
+    <div style="font-size:13px;color:#5B6964">Yield per MW for this size across all 10 seeds. Tap a bar to switch seed.</div>`)}
+  </div></div></div>`;
+}
+function relayout(){
+  const rows={}; S.items.forEach(i=>{ if(i.row!==undefined) (rows[i.row]=rows[i.row]||[]).push(i); });
+  let y=0; Object.keys(rows).sort((a,b)=>a-b).forEach(rk=>{ let maxH=0; const notesY={};
+    rows[rk].forEach(it=>{ const el=world.querySelector(`[data-id="${it.id}"]`); if(!el) return; const hgt=el.offsetHeight;
+      if(it.type==='note'){ const ny=notesY[it.x]||0; it.y=y+ny; notesY[it.x]=ny+hgt+24; maxH=Math.max(maxH,notesY[it.x]); }
+      else { it.y=y+(it.dy||0); maxH=Math.max(maxH,hgt+(it.dy||0)+24); }
+      el.style.top=it.y+'px'; });
+    y+=maxH+260; });
+  S._laid=true; layoutFrames();
+}
+function renderCard(it){
+  return ({artboard:renderArtboard,note:renderNote,run:renderRun,baseline:renderBaseline,overlay:renderOverlay,heatmap:renderHeatmap,variants:renderVariants})[it.type](it);
+}
+function cardAria(it){ if(it.type==='artboard') return 'Page '+PAGE_META[it.page].n+': '+PAGE_META[it.page].name; if(it.type==='note') return 'Note: '+it.text.slice(0,40)+'…'; if(it.type==='run'){const r=RUN[it.run]; return r?'Run '+runLabel(r):'Run';} if(it.type==='baseline') return 'Market without battery, seed '+it.seed; return ({overlay:'Overlay',heatmap:'Heatmap',variants:'Training variants'})[it.type]; }
+
+/* ---------- world render ---------- */
+const world=document.getElementById('world'), canvas=document.getElementById('canvas');
+function frameBounds(f){ const els=f.members.map(id=>document.querySelector(`[data-id="${id}"]`)).filter(Boolean); if(!els.length) return null;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity; els.forEach(e=>{ const it=item(e.dataset.id); x0=Math.min(x0,it.x); y0=Math.min(y0,it.y); x1=Math.max(x1,it.x+e.offsetWidth); y1=Math.max(y1,it.y+e.offsetHeight); });
+  return {x:x0-24,y:y0-24,w:x1-x0+48,h:y1-y0+48}; }
+function renderWorld(){
+  const cards=S.items.filter(i=>i.type!=='frame'), frames=S.items.filter(i=>i.type==='frame');
+  world.innerHTML = frames.map(f=>`<div class="frame${S.sel===f.id?' sel':''}" data-fid="${f.id}"><div class="frame-t" data-drag data-fdrag="${f.id}">${esc(f.title)}</div></div>`).join('') +
+    cards.map(it=>`<section class="obj ${it.type==='artboard'?'ab':it.type==='note'?'note '+(it.color||''):'card'}${S.sel===it.id?' sel':''}" data-id="${it.id}" tabindex="0" aria-label="${esc(cardAria(it))}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px">${renderCard(it)}</section>`).join('');
+  layoutFrames(); applyView();
+}
+function layoutFrames(){ S.items.filter(i=>i.type==='frame').forEach(f=>{ const el=world.querySelector(`[data-fid="${f.id}"]`); const b=frameBounds(f); if(!el) return; if(!b){el.hidden=true;return;} el.hidden=false; Object.assign(el.style,{left:b.x+'px',top:b.y+'px',width:b.w+'px',height:b.h+'px'}); f._b=b; }); }
+function applyView(){ const v=S.view; world.style.transform=`translate(${v.tx}px,${v.ty}px) scale(${v.k})`; document.getElementById('zLbl').textContent=Math.round(v.k*100)+'%';
+  canvas.style.backgroundSize=`${24*v.k}px ${24*v.k}px`; canvas.style.backgroundPosition=`${v.tx}px ${v.ty}px`;
+  document.getElementById('status').textContent=`${S.items.filter(i=>i.type==='artboard').length} pages · ${S.items.filter(i=>!['frame','artboard','note'].includes(i.type)).length} cards · drag empty space to pan · ${'ontouchstart' in window?'pinch':'Ctrl+scroll'} to zoom`; }
+
+/* ---------- panels ---------- */
+function renderRuns(){
+  const f=S.filt; const pane=document.getElementById('paneRuns');
+  const chip=(k,v,l)=>`<button class="chip" data-filt="${k}" data-val="${v}" aria-pressed="${f[k]===v}">${l}</button>`;
+  const list=D.runs.filter(r=>(f.p==null||r.p===f.p)&&(f.h==null||r.h===f.h)&&(f.s==null||r.s===f.s));
+  pane.innerHTML=`
+    <div class="field"><span class="lab">Power</span><div class="chips">${chip('p',null,'All')}${POWERS.map(p=>chip('p',p,p+' MW')).join('')}</div></div>
+    <div class="field"><span class="lab">Duration</span><div class="chips">${chip('h',null,'All')}${DURS.map(h=>chip('h',h,h+' h')).join('')}</div></div>
+    <div class="field"><label class="lab" for="fSeed">Seed</label><select id="fSeed"><option value="">All seeds</option>${SEEDS.map(s=>`<option value="${s}" ${f.s===s?'selected':''}>${s}${D.base[s].converged?'':' · gens not settled'}</option>`).join('')}</select></div>
+    <div class="field"><span class="lab">${list.length} runs · yield per MW</span><div class="list">${list.slice(0,120).map(r=>`<button class="rowbtn" data-addrun="${r.id}" aria-label="Add ${runLabel(r)} to canvas"><span class="n">${runLabel(r)}</span><span class="v">${r.m.yld.toFixed(1)}%</span><span class="add" aria-hidden="true">+</span></button>`).join('')}</div>
+    ${list.length>120?`<div class="hint">Showing 120 of ${list.length}. Narrow the filters.</div>`:''}</div>`;
+}
+function renderLayers(){
+  const pane=document.getElementById('paneLayers'); const frames=S.items.filter(i=>i.type==='frame'); const inFrame=new Set(frames.flatMap(f=>f.members));
+  const row=(it,ind)=>`<button class="rowbtn ${ind?'layer-ind':''}" data-goto="${it.id}" aria-current="${S.sel===it.id}"><span class="n">${esc(it.type==='frame'?'▣ '+it.title:cardAria(it))}</span><span></span><span class="add" aria-hidden="true">›</span></button>`;
+  pane.innerHTML=`<div class="list">${S.items.filter(i=>i.type==='artboard').map(c=>row(c,false)).join('')}${frames.map(f=>row(f,false)+f.members.map(id=>item(id)).filter(Boolean).map(c=>row(c,true)).join('')).join('')}
+   ${S.items.filter(i=>i.type!=='frame'&&i.type!=='artboard'&&!inFrame.has(i.id)).map(c=>row(c,false)).join('')}</div><div class="hint">Drop a card inside a frame to group it.</div>`;
+}
+function renderInspector(){
+  const el=document.getElementById('right'); const it=S.sel&&item(S.sel);
+  if(!it){ el.innerHTML=`<div class="pbody">
+    <span class="lab">Canvas</span>
+    <div class="hint">Pages are mockups of the dashboard; tap a page card on page 1 to jump. The run explorer (page 7) and the components below it use live run data. Select anything to inspect it.</div>
+    <dl class="kv"><dt>Pages</dt><dd>${S.items.filter(i=>i.type==='artboard').length}</dd><dt>Cards</dt><dd>${S.items.filter(i=>!['frame','artboard','note'].includes(i.type)).length}</dd><dt>Notes</dt><dd>${S.items.filter(i=>i.type==='note').length}</dd><dt>Frames</dt><dd>${S.items.filter(i=>i.type==='frame').length}</dd></dl>
+    <span class="lab">Reading a run card</span>
+    <div class="hint" style="line-height:1.6"><b style="color:var(--gen)">Inputs</b> what the policy observed and how it was trained.<br><b style="color:var(--bat)">Policy output</b> the 24 bids it submitted.<br><b>Outcomes</b> what the market did with them.<br><b style="color:var(--mut)">Learning</b> how it got there.<br>All values are relative: % of the no-battery mean price, % of battery MW or MWh.</div>
+    <span class="lab">Keys</span>
+    <dl class="kv"><dt>V / H</dt><dd>select / pan</dd><dt>+ / − / 0</dt><dd>zoom / fit</dd><dt>arrows</dt><dd>nudge 8 px</dd><dt>Delete</dt><dd>remove card</dd><dt>Esc</dt><dd>deselect</dd></dl>
+    <span class="lab">Built on Figma's 7 UI principles</span>
+    <ol class="hint principles" style="margin:0;padding-left:18px">
+      <li><b>Hierarchy</b> pages are the largest objects; one headline per page and per card.</li>
+      <li><b>Progressive disclosure</b> sections open on demand; details only in the inspector.</li>
+      <li><b>Consistency</b> every run card has the same four sections, scales and colours.</li>
+      <li><b>Contrast</b> amber = battery, blue = generators, dashed grey = no battery, blue outline = selected.</li>
+      <li><b>Proximity</b> each page's open questions sit beside it; inputs, bids and outcomes share one card.</li>
+      <li><b>Accessibility</b> keyboard control, 36–44 px targets, labelled charts, both themes.</li>
+      <li><b>Alignment</b> cards snap to an 8 px grid; charts share one time axis.</li>
+    </ol></div>`; return; }
+  let h=`<div class="pbody"><span class="lab">${esc(it.type==='frame'?'Frame':cardAria(it))}</span>`;
+  if(it.type==='frame'){ h+=`<div class="field"><label for="iTitle">Title</label><input id="iTitle" type="text" value="${esc(it.title)}" style="min-height:36px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:0 8px"></div><div class="hint">${it.members.length} cards. Drag the frame title to move them together.</div>`; }
+  if(it.type==='run'){ const r=RUN[it.run];
+    h+=`<div class="field"><label for="iP">Power</label><select id="iP" data-runpart="p">${POWERS.map(p=>`<option ${p===r.p?'selected':''}>${p}</option>`).join('')}</select></div>
+    <div class="field"><label for="iH">Duration (h)</label><select id="iH" data-runpart="h">${DURS.map(x=>`<option ${x===r.h?'selected':''}>${x}</option>`).join('')}</select></div>
+    <div class="field"><label for="iS">Seed</label><select id="iS" data-runpart="s">${SEEDS.map(x=>`<option ${x===r.s?'selected':''}>${x}</option>`).join('')}</select></div>
+    <span class="lab">Sections</span>${[['in','Inputs'],['act','Policy output'],['out','Outcomes'],['learn','Learning']].map(([k,l])=>`<label class="check"><input type="checkbox" data-show="${k}" ${it.show[k]?'checked':''}>${l}</label>`).join('')}
+    <span class="lab">All metrics</span><dl class="kv">${Object.entries(METRICS).map(([k,M])=>`<dt>${M.label}</dt><dd>${fmt(r.m[k],M.dec)}${M.unit}</dd>`).join('')}<dt>Equivalent cycles</dt><dd>${r.m.cyc.toFixed(2)}</dd><dt>Price std change</dt><dd>${sgn(r.m.dstd)}%</dd></dl>
+    <div class="btnrow"><button class="btn" data-act="seeds">Overlay all 10 seeds</button><button class="btn" data-act="durs">Overlay 4 durations</button></div>`; }
+  if(it.type==='baseline'){ h+=`<div class="field"><label for="iSeed">Seed</label><select id="iSeed">${SEEDS.map(x=>`<option ${x===it.seed?'selected':''}>${x}</option>`).join('')}</select></div>
+    <span class="lab">Sections</span>${[['in','Inputs'],['out','Generator bids and price'],['learn','Pretraining']].map(([k,l])=>`<label class="check"><input type="checkbox" data-show="${k}" ${it.show[k]?'checked':''}>${l}</label>`).join('')}`; }
+  if(it.type==='overlay'){ h+=`<div class="field"><label for="iSer">Series</label><select id="iSer">${Object.entries(SERIES).map(([k,v])=>`<option value="${k}" ${k===it.series?'selected':''}>${v.label}</option>`).join('')}</select></div>
+    <span class="lab">Runs (up to 6)</span><div class="list">${it.runs.map((id,i)=>`<div class="rowbtn" style="cursor:default"><span class="n"><i class="sw" style="display:inline-block;border-color:var(--c${i%6+1});margin-right:6px;vertical-align:middle"></i>${runLabel(RUN[id])}</span><span></span><button class="btn" data-rmrun="${i}" aria-label="Remove ${runLabel(RUN[id])}" style="min-height:30px;padding:0 8px">×</button></div>`).join('')}</div>
+    <div class="field"><label for="iAddRun">Add run</label><select id="iAddRun"><option value="">Choose…</option>${D.runs.map(r=>`<option value="${r.id}">${runLabel(r)}</option>`).join('')}</select></div>`; }
+  if(it.type==='heatmap'){ h+=`<div class="field"><label for="iMet">Metric</label><select id="iMet">${Object.entries(METRICS).map(([k,M])=>`<option value="${k}" ${k===it.metric?'selected':''}>${M.label}</option>`).join('')}</select></div>
+    <div class="field"><label for="iHS">Seeds</label><select id="iHS"><option value="all" ${it.seed==='all'?'selected':''}>Mean of 10</option>${SEEDS.map(x=>`<option ${x===it.seed?'selected':''}>${x}</option>`).join('')}</select></div>`; }
+  if(it.type==='artboard'){ const M=PAGE_META[it.page];
+    h+=`<div class="field"><span class="lab">Question it answers</span><div style="font-size:14px">${esc(M.q)}</div></div><dl class="kv"><dt>Data</dt><dd style="text-align:left">${esc(M.src)}</dd></dl>`;
+    if(it.page==='Explorer'){ const r=RUN[it.run]; h+=`<div class="field"><label for="iP">Power</label><select id="iP" data-runpart="p">${POWERS.map(p=>`<option ${p===r.p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="field"><label for="iH">Duration (h)</label><select id="iH" data-runpart="h">${DURS.map(x=>`<option ${x===r.h?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div class="field"><label for="iS">Seed</label><select id="iS" data-runpart="s">${SEEDS.map(x=>`<option ${x===r.s?'selected':''}>${x}</option>`).join('')}</select></div><div class="hint">The chips inside the page work too.</div>`; }
+    const qs=QUESTIONS.filter(q=>q.page===it.page); if(qs.length) h+=`<span class="lab">Open questions</span>${qs.map(q=>`<div class="hint" style="border-left:3px solid var(--faint);padding-left:8px">${esc(q.text)}</div>`).join('')}`; }
+  if(it.type==='note'){ h+=`<div class="field"><label for="iNote">Text</label><textarea id="iNote" rows="6" style="border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:8px;font:inherit;color:inherit">${esc(it.text)}</textarea></div>
+    <div class="field"><label for="iCol">Colour</label><select id="iCol">${['yellow','blue','green','orange'].map(c=>`<option ${c===it.color?'selected':''}>${c}</option>`).join('')}</select></div>`; }
+  if(!['frame','artboard','note'].includes(it.type)) h+=`<div class="field"><label for="iW">Width (px)</label><select id="iW">${[320,360,440,520,640].map(w=>`<option ${w===it.w?'selected':''}>${w}</option>`).join('')}</select></div>`;
+  h+=`<dl class="kv"><dt>Position</dt><dd>${Math.round(it.x??it._b?.x??0)}, ${Math.round(it.y??it._b?.y??0)}</dd></dl><div class="btnrow">${it.type!=='frame'?'<button class="btn" data-act="dup">Duplicate</button>':''}<button class="btn" data-act="zoomto">Zoom to</button><button class="btn danger" data-act="del">Delete</button></div></div>`;
+  el.innerHTML=h;
+}
+function renderAll(){ renderWorld(); renderRuns(); renderLayers(); renderInspector(); save(); }
+
+/* ---------- actions ---------- */
+function toast(t){ const el=document.getElementById('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('on'),1600); }
+function viewCenter(){ const r=canvas.getBoundingClientRect(), v=S.view; return {x:(r.width/2-v.tx)/v.k, y:(r.height/2-v.ty)/v.k}; }
+const snap=v=>Math.round(v/8)*8;
+function addItem(o){ const c=viewCenter(); o.id=nid(); o.x=snap(c.x-(o.w||360)/2); o.y=snap(c.y-200); o.w=o.w||360; S.items.push(o); S.sel=o.id; renderAll(); toast('Added '+cardAria(o)); }
+function addRun(id){ addItem({type:'run',run:id,show:{in:false,act:true,out:true,learn:false}}); }
+function select(id){ S.sel=id; world.querySelectorAll('.obj,.frame').forEach(e=>e.classList.toggle('sel',(e.dataset.id||e.dataset.fid)===id)); renderInspector(); renderLayers(); save(); }
+function delSel(){ const it=item(S.sel); if(!it) return; S.items=S.items.filter(i=>i.id!==it.id); S.items.forEach(f=>{ if(f.type==='frame') f.members=f.members.filter(m=>m!==it.id); }); S.sel=null; renderAll(); toast('Deleted. Reset layout restores the start.'); }
+function zoomAt(k,cx,cy){ const v=S.view; k=Math.max(0.15,Math.min(2.5,k)); const wx=(cx-v.tx)/v.k, wy=(cy-v.ty)/v.k; v.k=k; v.tx=cx-wx*k; v.ty=cy-wy*k; applyView(); }
+function bbox(ids){ let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity; ids.forEach(id=>{ const it=item(id); const el=world.querySelector(`[data-id="${id}"]`); let b; if(it.type==='frame') b=it._b; else if(el) b={x:it.x,y:it.y,w:el.offsetWidth,h:el.offsetHeight}; if(!b) return; x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h); }); return isFinite(x0)?{x:x0,y:y0,w:x1-x0,h:y1-y0}:null; }
+function fit(ids){ const b=bbox(ids||S.items.map(i=>i.id)); if(!b) return; const r=canvas.getBoundingClientRect(); const k=Math.max(0.15,Math.min(1.5,Math.min((r.width-60)/b.w,(r.height-90)/(b.h+40)))); S.view={k,tx:(r.width-b.w*k)/2-b.x*k,ty:(r.height-b.h*k)/2-b.y*k+14}; applyView(); save(); }
+
+/* ---------- pointer: pan, drag, pinch ---------- */
+const ptrs=new Map(); let drag=null, pinch=null;
+canvas.addEventListener('pointerdown',e=>{
+  if(e.button!==0 && e.pointerType==='mouse') return;
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),k:S.view.k,cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,tx:S.view.tx,ty:S.view.ty}; drag=null; return; }
+  const interactive=e.target.closest('button,select,input,label,a');
+  const dh=e.target.closest('[data-drag]');
+  const card=e.target.closest('.obj');
+  if(S.tool==='select' && dh){
+    const fid=dh.dataset.fdrag; const id=fid||card.dataset.id; select(id);
+    const moving = fid ? [fid,...item(fid).members] : [id];
+    drag={mode:'item',id,sx:e.clientX,sy:e.clientY,orig:moving.map(m=>{const it=item(m); return {m,x:it.type==='frame'?it._b.x:it.x,y:it.type==='frame'?it._b.y:it.y};}),moved:false};
+    canvas.setPointerCapture(e.pointerId); e.preventDefault(); return;
+  }
+  if(card && S.tool==='select'){ if(S.sel!==card.dataset.id) select(card.dataset.id); return; }
+  if(interactive) return;
+  drag={mode:'pan',sx:e.clientX,sy:e.clientY,tx:S.view.tx,ty:S.view.ty,moved:false}; canvas.classList.add('panning'); canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pinch && ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); const r=canvas.getBoundingClientRect(); const cx=(a.x+b.x)/2-r.left, cy=(a.y+b.y)/2-r.top;
+    const k=Math.max(0.15,Math.min(2.5,pinch.k*d/pinch.d)); const pcx=pinch.cx-r.left, pcy=pinch.cy-r.top; const wx=(pcx-pinch.tx)/pinch.k, wy=(pcy-pinch.ty)/pinch.k; S.view.k=k; S.view.tx=cx-wx*k; S.view.ty=cy-wy*k; applyView(); return; }
+  if(!drag) return; const dx=e.clientX-drag.sx, dy=e.clientY-drag.sy; if(Math.abs(dx)+Math.abs(dy)>3) drag.moved=true;
+  if(drag.mode==='pan'){ S.view.tx=drag.tx+dx; S.view.ty=drag.ty+dy; applyView(); }
+  else { drag.orig.forEach(o=>{ const it=item(o.m); if(it.type==='frame') return; it.x=snap(o.x+dx/S.view.k); it.y=snap(o.y+dy/S.view.k); const el=world.querySelector(`[data-id="${o.m}"]`); el.style.left=it.x+'px'; el.style.top=it.y+'px'; }); layoutFrames(); }
+});
+function endPtr(e){
+  ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null;
+  if(drag){ if(drag.mode==='pan'){ canvas.classList.remove('panning'); if(!drag.moved && S.sel){ select(null); } }
+    else if(drag.moved && !drag.orig.some(o=>item(o.m).type==='frame')){ const it=item(drag.id); const el=world.querySelector(`[data-id="${it.id}"]`); const cx=it.x+el.offsetWidth/2, cy=it.y+40;
+      const frames=S.items.filter(i=>i.type==='frame'); frames.forEach(f=>f.members=f.members.filter(m=>m!==it.id));
+      const target=frames.find(f=>f._b && cx>f._b.x && cx<f._b.x+f._b.w && cy>f._b.y && cy<f._b.y+f._b.h); if(target) target.members.push(it.id);
+      layoutFrames(); renderLayers(); renderInspector(); }
+    drag=null; save(); }
+}
+canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercancel',endPtr);
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); const r=canvas.getBoundingClientRect(); if(e.ctrlKey||e.metaKey){ zoomAt(S.view.k*Math.exp(-e.deltaY*0.01),e.clientX-r.left,e.clientY-r.top); } else { S.view.tx-=e.deltaX; S.view.ty-=e.deltaY; applyView(); } clearTimeout(canvas._s); canvas._s=setTimeout(save,300); },{passive:false});
+// Safari trackpad pinch
+canvas.addEventListener('gesturestart',e=>{ e.preventDefault(); canvas._gk=S.view.k; });
+canvas.addEventListener('gesturechange',e=>{ e.preventDefault(); const r=canvas.getBoundingClientRect(); zoomAt(canvas._gk*e.scale,e.clientX-r.left,e.clientY-r.top); });
+
+/* ---------- clicks and inputs (delegated) ---------- */
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-toggle]'); if(t){ const id=t.closest('.obj').dataset.id; const it=item(id); it.show[t.dataset.toggle]=!it.show[t.dataset.toggle]; S.sel=id; renderWorld(); renderInspector(); save(); return; }
+  const pg=e.target.closest('[data-page]'); if(pg){ e.preventDefault(); const ab=S.items.find(i=>i.type==='artboard'&&i.page===pg.dataset.page); if(ab){ select(ab.id); fit([ab.id]); } return; }
+  const pk=e.target.closest('[data-pick]'); if(pk){ const it=item(pk.closest('.obj').dataset.id); const r=RUN[it.run]; const parts={p:r.p,h:r.h,s:r.s}; const [k,v]=pk.dataset.pick.split(':'); parts[k]=+v; it.run=runId(parts.p,parts.h,parts.s); S.sel=it.id; renderWorld(); renderInspector(); save(); return; }
+  const ar=e.target.closest('[data-addrun]'); if(ar){ addRun(ar.dataset.addrun); closeDrawers(); return; }
+  const fl=e.target.closest('[data-filt]'); if(fl){ const v=fl.dataset.val==='null'?null:+fl.dataset.val; S.filt[fl.dataset.filt]=v; renderRuns(); save(); return; }
+  const go=e.target.closest('[data-goto]'); if(go){ select(go.dataset.goto); fit([go.dataset.goto]); closeDrawers(); return; }
+  const rm=e.target.closest('[data-rmrun]'); if(rm){ const it=item(S.sel); it.runs.splice(+rm.dataset.rmrun,1); renderAll(); return; }
+  const a=e.target.closest('[data-act]'); if(a){ const it=item(S.sel); const k=a.dataset.act;
+    if(k==='del') delSel();
+    if(k==='dup'){ const c=JSON.parse(JSON.stringify(it)); c.id=nid(); c.x+=it.w+24; S.items.push(c); S.sel=c.id; renderAll(); toast('Duplicated'); }
+    if(k==='zoomto') fit([it.id]);
+    if(k==='seeds'||k==='durs'){ const r=RUN[it.run]; const runs=k==='seeds'?SEEDS.slice(0,6).map(s=>runId(r.p,r.h,s)):DURS.map(h=>runId(r.p,h,r.s)); addItem({type:'overlay',runs,series:'price'}); if(k==='seeds') toast('Overlay shows the first 6 seeds'); }
+    return; }
+});
+document.addEventListener('change',e=>{
+  const t=e.target, it=S.sel&&item(S.sel);
+  if(t.id==='addSel'){ const v=t.value; t.value=''; if(!v) return;
+    if(v==='run') addRun(runId(25,4,43)); if(v==='baseline') addItem({type:'baseline',seed:43,show:{in:false,out:true,learn:true}});
+    if(v==='overlay') addItem({type:'overlay',runs:[runId(5,4,43),runId(25,4,43),runId(75,4,43)],series:'soc'});
+    if(v==='heatmap') addItem({type:'heatmap',metric:'fph',seed:'all'}); if(v==='variants') addItem({type:'variants'}); if(v==='note') addItem({type:'note',text:'New note',color:'yellow',w:340}); return; }
+  if(t.id==='fSeed'){ S.filt.s=t.value?+t.value:null; renderRuns(); save(); return; }
+  if(!it) return;
+  if(t.dataset.runpart){ const r=RUN[it.run]; const parts={p:r.p,h:r.h,s:r.s}; parts[t.dataset.runpart]=+t.value; it.run=runId(parts.p,parts.h,parts.s); }
+  if(t.dataset.show) it.show[t.dataset.show]=t.checked;
+  if(t.id==='iSeed') it.seed=+t.value;
+  if(t.id==='iSer') it.series=t.value;
+  if(t.id==='iAddRun' && t.value){ if(it.runs.length>=6){ toast('Overlay holds 6 runs. Remove one first.'); t.value=''; return; } it.runs.push(t.value); }
+  if(t.id==='iMet') it.metric=t.value;
+  if(t.id==='iHS') it.seed=t.value==='all'?'all':+t.value;
+  if(t.id==='iW') it.w=+t.value;
+  if(t.id==='iCol') it.color=t.value;
+  renderAll();
+});
+document.addEventListener('input',e=>{ if(e.target.id==='iNote'){ const it=item(S.sel); it.text=e.target.value; const p=world.querySelector(`[data-id="${it.id}"] p`); if(p) p.textContent=it.text; save(); return; } if(e.target.id==='iTitle'){ const it=item(S.sel); it.title=e.target.value; const el=world.querySelector(`[data-fdrag="${it.id}"]`); if(el) el.textContent=it.title; renderLayers(); save(); } });
+
+/* ---------- toolbar, tabs, drawers, keys ---------- */
+function setTool(t){ S.tool=t; document.getElementById('toolSel').setAttribute('aria-pressed',t==='select'); document.getElementById('toolHand').setAttribute('aria-pressed',t==='hand'); canvas.classList.toggle('hand',t==='hand'); save(); }
+document.getElementById('toolSel').onclick=()=>setTool('select');
+document.getElementById('toolHand').onclick=()=>setTool('hand');
+const zc=()=>{const r=canvas.getBoundingClientRect(); return [r.width/2,r.height/2];};
+document.getElementById('zIn').onclick=()=>{ zoomAt(S.view.k*1.25,...zc()); save(); };
+document.getElementById('zOut').onclick=()=>{ zoomAt(S.view.k/1.25,...zc()); save(); };
+document.getElementById('zLbl').onclick=()=>fit();
+document.getElementById('btnReset').onclick=()=>{ S=defaultState(); renderAll(); relayout(); requestAnimationFrame(()=>{ fit(S.items.filter(i=>i.type==='artboard').slice(0,3).map(i=>i.id)); S._fitted=true; save(); }); toast('Layout restored'); };
+function setTab(t){ S.tab=t; document.getElementById('tabRuns').setAttribute('aria-selected',t==='runs'); document.getElementById('tabLayers').setAttribute('aria-selected',t==='layers'); document.getElementById('paneRuns').hidden=t!=='runs'; document.getElementById('paneLayers').hidden=t!=='layers'; save(); }
+document.getElementById('tabRuns').onclick=()=>setTab('runs'); document.getElementById('tabLayers').onclick=()=>setTab('layers');
+const mq=window.matchMedia('(max-width:860px)');
+function drawer(side,open){ const el=document.getElementById(side), b=document.getElementById(side==='left'?'btnLeft':'btnRight'); el.hidden=!open; b.setAttribute('aria-expanded',open); }
+function closeDrawers(){ if(mq.matches){ drawer('left',false); drawer('right',false); } }
+function syncDrawers(){ if(mq.matches){ drawer('left',false); drawer('right',false); } else { document.getElementById('left').hidden=false; document.getElementById('right').hidden=false; } }
+document.getElementById('btnLeft').onclick=()=>{ const o=document.getElementById('left').hidden; drawer('right',false); drawer('left',o); };
+document.getElementById('btnRight').onclick=()=>{ const o=document.getElementById('right').hidden; drawer('left',false); drawer('right',o); };
+mq.addEventListener?mq.addEventListener('change',syncDrawers):mq.addListener(syncDrawers);
+document.addEventListener('keydown',e=>{
+  if(e.target.closest('input,select,textarea')) return;
+  const k=e.key; const it=S.sel&&item(S.sel);
+  if(k==='v'||k==='V') setTool('select'); else if(k==='h'||k==='H') setTool('hand');
+  else if(k==='+'||k==='=') { zoomAt(S.view.k*1.25,...zc()); save(); } else if(k==='-') { zoomAt(S.view.k/1.25,...zc()); save(); } else if(k==='0') fit();
+  else if(k==='Escape') select(null);
+  else if((k==='Delete'||k==='Backspace') && it) { e.preventDefault(); delSel(); }
+  else if(k.startsWith('Arrow') && it && it.type!=='frame' && e.target.closest('.card,#canvas,body')){ e.preventDefault(); const st=e.shiftKey?40:8; if(k==='ArrowLeft')it.x-=st; if(k==='ArrowRight')it.x+=st; if(k==='ArrowUp')it.y-=st; if(k==='ArrowDown')it.y+=st; const el=world.querySelector(`[data-id="${it.id}"]`); el.style.left=it.x+'px'; el.style.top=it.y+'px'; layoutFrames(); save(); }
+});
+world.addEventListener('focusin',e=>{ const c=e.target.closest('.obj'); if(c && S.sel!==c.dataset.id) select(c.dataset.id); });
+
+/* ---------- boot ---------- */
+setTool(S.tool||'select'); setTab(S.tab||'runs'); syncDrawers(); renderAll();
+if(!S._laid){ relayout(); if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ relayout(); fit(S.items.filter(i=>i.type==='artboard').slice(0,3).map(i=>i.id)); S._fitted=true; save(); }); }
+if(!S._fitted){ requestAnimationFrame(()=>{ const a=S.items.filter(i=>i.type==='artboard').slice(0,3).map(i=>i.id); fit(a); S._fitted=true; save(); }); }
+})();
+</script>
