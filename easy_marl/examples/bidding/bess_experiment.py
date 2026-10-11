@@ -41,7 +41,7 @@ HOURS = 24
 ARMS = ("frozen", "adaptive")
 # Same demand draws for every config, so differences come from the battery, not noise.
 EVAL_SEED = 10_000
-# A battery below this many equivalent cycles has only sold its free starting charge.
+# Batteries below this many equivalent cycles are flagged as lightly used; it is a diagnostic, not a bound on what is economic.
 MIN_USEFUL_CYCLES = 0.6
 
 # Day-ahead training: one environment step is one simulated day, so
