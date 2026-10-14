@@ -157,6 +157,21 @@ class TestSweep:
         monkeypatch.setattr(bess_experiment, "parallel_train", fail_if_called)
         run_sweep(configs, bess_experiment.PRESETS["smoke"], tmp_path)
 
+    def test_that_resuming_with_a_different_episode_days_is_rejected(self, tmp_path, monkeypatch):
+        configs = build_configs(powers=[10], durations=[1], seeds=[42])
+        for config in configs:
+            config_dir = tmp_path / config.config_id
+            config_dir.mkdir()
+            (config_dir / "metrics.json").write_text(json.dumps({"config": asdict(config)}))
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("training ran despite a mismatched resume")
+
+        monkeypatch.setattr(bess_experiment, "parallel_train", fail_if_called)
+        mismatched = build_configs(powers=[10], durations=[1], seeds=[42], episode_days=7)
+        with pytest.raises(ValueError, match=mismatched[0].config_id):
+            run_sweep(mismatched, bess_experiment.PRESETS["smoke"], tmp_path)
+
     @pytest.mark.parametrize("preset_name", sorted(bess_experiment.PRESETS))
     def test_that_the_battery_trains_every_round_against_frozen_generators(
         self, preset_name, tmp_path, monkeypatch
@@ -257,6 +272,79 @@ class TestPretrainedGenerators:
     def test_that_a_single_pretraining_round_is_rejected(self, tmp_path):
         with pytest.raises(ValueError, match="pretrain_rounds"):
             get_pretrained(42, {**TINY_PRESET, "pretrain_rounds": 1}, tmp_path)
+
+
+class RecordingAgent:
+    """Records the observation it is asked to act on; ignores it and bids null."""
+
+    def __init__(self):
+        self.seen_obs = None
+
+    def act(self, obs, deterministic=True):
+        self.seen_obs = obs.copy()
+        return np.zeros(2, dtype=np.float32)
+
+    def fixed_act_function(self, deterministic=True):
+        return lambda obs: np.zeros(2, dtype=np.float32)
+
+
+class TestBidSchedulesAndProbePrices:
+    def test_that_explicit_prev_prices_feed_every_agents_observation(self):
+        params = make_default_params(N=3, T=24, day_ahead=True, episode_days=3)
+        agents = [RecordingAgent() for _ in range(3)]
+        prev_prices = (np.arange(24, dtype=np.float32) + 5.0)
+
+        bess_experiment._bid_schedules(agents, params, prev_prices)
+
+        env = MARLElectricityMarketEnv(
+            agents=[], params=params, seed=bess_experiment.EVAL_SEED, observer_name=DEFAULT_OBS
+        )
+        for agent in agents:
+            np.testing.assert_allclose(agent.seen_obs[-24:], prev_prices / env.cost_scale)
+
+    def test_that_prev_prices_for_single_day_params_is_rejected(self):
+        params = make_default_params(N=3, T=24, day_ahead=True)
+        with pytest.raises(ValueError, match="multi-day"):
+            bess_experiment._bid_schedules(
+                [SimpleAgent() for _ in range(3)], params, prev_prices=np.zeros(24, dtype=np.float32)
+            )
+
+    def test_that_single_day_bid_schedules_output_is_unchanged(self):
+        params = make_default_params(N=3, T=24, day_ahead=True)
+        agents = init_agents(3, params, seed=0)
+        expected = np.array(
+            [
+                np.clip(
+                    agent.act(
+                        MARLElectricityMarketEnv(
+                            agents=[], params=params, seed=bess_experiment.EVAL_SEED,
+                            observer_name=DEFAULT_OBS,
+                        )._get_obs(i).copy()
+                    ),
+                    -1.0,
+                    1.0,
+                )
+                for i, agent in enumerate(agents)
+            ]
+        )
+        np.testing.assert_array_equal(bess_experiment._bid_schedules(agents, params), expected)
+
+    def test_that_probe_prices_come_from_a_played_day_not_the_at_cost_stand_in(self):
+        params = make_default_params(N=3, T=24, day_ahead=True, episode_days=3)
+        agents = init_agents(3, params, seed=0)
+
+        probe = bess_experiment._probe_prices(agents, params)
+
+        env = MARLElectricityMarketEnv(
+            agents=[], params=params, seed=bess_experiment.EVAL_SEED, observer_name=DEFAULT_OBS
+        )
+        assert probe.shape == (24,)
+        assert not np.allclose(probe, env._at_cost_prices())
+
+    def test_that_probe_prices_is_rejected_for_single_day_params(self):
+        params = make_default_params(N=3, T=24, day_ahead=True)
+        with pytest.raises(ValueError, match="multi-day"):
+            bess_experiment._probe_prices([SimpleAgent() for _ in range(3)], params)
 
 
 class TestPretrainThenAddBattery:

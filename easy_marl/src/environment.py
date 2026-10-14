@@ -44,7 +44,10 @@ class MARLElectricityMarketEnv(gym.Env):
         # Day-ahead: every agent commits to all T hours at once and one step is one day.
         self.day_ahead = bool(params.get("day_ahead", False))
         # Multi-day episodes: battery charge carries across days and every agent sees yesterday's prices.
-        self.episode_days = int(params.get("episode_days", 1))
+        episode_days = params.get("episode_days", 1)
+        if not isinstance(episode_days, (int, np.integer)) or isinstance(episode_days, bool):
+            raise ValueError(f"episode_days must be an integer, got {episode_days!r}.")
+        self.episode_days = int(episode_days)
         if self.episode_days < 1:
             raise ValueError(f"episode_days must be at least 1, got {self.episode_days}.")
         self.multi_day = self.episode_days > 1
@@ -149,6 +152,7 @@ class MARLElectricityMarketEnv(gym.Env):
 
         # outputs / internal state
         self.prev_prices = None
+        self._days_played = 0
         self.reset(seed=seed)
 
     def run_stochastics(self) -> None:
@@ -204,8 +208,9 @@ class MARLElectricityMarketEnv(gym.Env):
         self.b_all = np.zeros(self.N, dtype=np.float32)
         self.q_all = np.zeros(self.N, dtype=np.float32)
 
-        # Only the first day after construction has no real yesterday; later resets keep the last day's prices.
-        if self.multi_day and self.prev_prices is None:
+        # No day has been played since construction: recompute the at-cost stand-in against
+        # the demand just drawn above, rather than keeping one from a different draw.
+        if self.multi_day and self._days_played == 0:
             self.prev_prices = self._at_cost_prices()
 
         return self._get_obs(), {}
@@ -424,6 +429,7 @@ class MARLElectricityMarketEnv(gym.Env):
         if self.multi_day:
             start = self.day * self.T
             self.prev_prices = self.output["market_prices"][start : start + self.T].copy()
+        self._days_played += 1
         self.day += 1
         if self.day < self.episode_days:
             self.run_stochastics()

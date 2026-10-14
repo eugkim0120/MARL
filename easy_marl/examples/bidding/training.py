@@ -292,6 +292,11 @@ def evaluate_agents(
     """
     Evaluate trained agents over multiple episodes.
 
+    In multi-day markets each evaluation episode is a fresh environment, so results
+    are per episode (episode_days days) and battery profit includes selling its
+    starting charge; the sweep's simulate_episodes is the per-day, warm-up-corrected
+    evaluation.
+
     Args:
         agents: List of trained agent objects
         params: Environment parameters

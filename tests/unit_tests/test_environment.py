@@ -398,6 +398,33 @@ class TestMARLEnvMultiDay:
         else:
             raise AssertionError("expected ValueError for episode_days=0")
 
+    def test_that_a_non_integer_episode_days_is_rejected(self):
+        try:
+            MARLElectricityMarketEnv(
+                agents=[MockAgent(GENERATOR_NULL)] * 3, params={**DAY_PARAMS, "episode_days": 2.9}
+            )
+        except ValueError as error:
+            assert "episode_days" in str(error)
+        else:
+            raise AssertionError("expected ValueError for episode_days=2.9")
+
+    def test_that_a_bool_episode_days_is_rejected(self):
+        try:
+            MARLElectricityMarketEnv(
+                agents=[MockAgent(GENERATOR_NULL)] * 3, params={**DAY_PARAMS, "episode_days": True}
+            )
+        except ValueError as error:
+            assert "episode_days" in str(error)
+        else:
+            raise AssertionError("expected ValueError for episode_days=True")
+
+    def test_that_a_numpy_integer_episode_days_is_accepted(self):
+        env = MARLElectricityMarketEnv(
+            agents=[MockAgent(GENERATOR_NULL)] * 3,
+            params={**DAY_PARAMS, "episode_days": np.int64(3)},
+        )
+        assert env.episode_days == 3
+
     def test_that_generators_see_demand_own_features_and_yesterdays_prices(self):
         env = make_multi_env(params=MULTI_PARAMS)
         obs, _ = env.reset()
@@ -501,6 +528,14 @@ class TestMARLEnvMultiDay:
         first = demands(seed=3)
         assert not np.allclose(first[0], first[1])
         np.testing.assert_array_equal(first, demands(seed=3))
+
+    def test_that_day_one_stand_in_matches_that_days_own_demand(self):
+        params = {**MULTI_PARAMS, "demand_profile": [40.0, 55.0, 70.0, 90.0, 110.0]}
+        env = make_multi_env(params=params, seed=3)
+
+        env.reset()
+
+        np.testing.assert_allclose(env.prev_prices, env._at_cost_prices())
 
     def test_that_reset_keeps_the_charge_and_prices_but_draws_new_demand(self):
         env = make_multi_env(FULL_DISCHARGE, seed=3)

@@ -293,18 +293,44 @@ def _load_generators(
     return agents
 
 
-def _bid_schedules(agents: List[PPOAgent], params: Dict) -> np.ndarray:
-    """Deterministic, clipped action of every agent on the evaluation demand profile."""
+def _bid_schedules(
+    agents: List[PPOAgent], params: Dict, prev_prices: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """Deterministic, clipped action of every agent on the evaluation demand profile.
+
+    prev_prices overrides the "yesterday" the agents observe (only meaningful in
+    multi-day markets), so convergence can be probed on-distribution instead of
+    off the at-cost stand-in every agent trains against only on day one.
+    """
+    if prev_prices is not None and params.get("episode_days", 1) <= 1:
+        raise ValueError("prev_prices is only valid for multi-day params.")
     env = MARLElectricityMarketEnv(
         agents=agents, params=params, seed=EVAL_SEED, observer_name=DEFAULT_OBS
     )
     env.reset(seed=EVAL_SEED)
+    if prev_prices is not None:
+        env.prev_prices = prev_prices
     return np.array(
         [
             np.clip(agent.act(env._get_obs(i).copy()), -1.0, 1.0)
             for i, agent in enumerate(agents)
         ]
     )
+
+
+def _probe_prices(agents: List[PPOAgent], params: Dict) -> np.ndarray:
+    """Play one multi-day episode and return the last day's prices.
+
+    Used to feed _bid_schedules a "yesterday" the policy actually sees in training,
+    instead of the at-cost stand-in that only ever occurs on day one.
+    """
+    if params.get("episode_days", 1) <= 1:
+        raise ValueError("_probe_prices is only valid for multi-day params.")
+    env = MARLElectricityMarketEnv(
+        agents=agents, params=params, seed=EVAL_SEED, observer_name=DEFAULT_OBS
+    )
+    _play_episode(env)
+    return env.prev_prices.copy()
 
 
 def get_pretrained(seed: int, preset: Dict, out_dir) -> List[PPOAgent]:
@@ -339,8 +365,15 @@ def get_pretrained(seed: int, preset: Dict, out_dir) -> List[PPOAgent]:
         for i, agent in enumerate(agents):
             (directory / f"agent_{i}.zip").write_bytes(agent.save_to_bytes())
 
+        if episode_days > 1:
+            # One fixed probe for every round: the final generators' own played day, not
+            # the at-cost stand-in each round's bid schedule would otherwise be read off.
+            probe_prices = _probe_prices(_load_generators(directory, params, seed), params)
+        else:
+            probe_prices = None
+
         schedules = [
-            _bid_schedules(_load_generators(directory, params, seed, r), params)
+            _bid_schedules(_load_generators(directory, params, seed, r), params, probe_prices)
             for r in range(1, rounds + 1)
         ]
         changes = [float(np.abs(b - a).mean()) for a, b in zip(schedules, schedules[1:])]
@@ -349,6 +382,8 @@ def get_pretrained(seed: int, preset: Dict, out_dir) -> List[PPOAgent]:
             "tolerance": preset["pretrain_change_tol"],
             "converged": bool(changes[-1] <= preset["pretrain_change_tol"]),
         }
+        if episode_days > 1:
+            info["probe_prices"] = probe_prices.tolist()
         # Written last: its presence marks the cache as complete.
         (directory / "convergence.json").write_text(json.dumps(info, indent=2))
 
@@ -456,7 +491,16 @@ def run_sweep(configs: List[SweepConfig], preset: Dict, out_dir) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for i, config in enumerate(configs, start=1):
-        if (out_dir / config.config_id / "metrics.json").exists():
+        metrics_path = out_dir / config.config_id / "metrics.json"
+        if metrics_path.exists():
+            stored = json.loads(metrics_path.read_text())
+            # Old metrics.json files predate episode_days and ran single days.
+            stored_days = stored.get("config", {}).get("episode_days", 1)
+            if stored_days != config.episode_days:
+                raise ValueError(
+                    f"{config.config_id} was resumed with episode_days={config.episode_days}, "
+                    f"but its stored metrics in {out_dir} has episode_days={stored_days}."
+                )
             print(f"[{i}/{len(configs)}] {config.config_id}: done, skipping")
             continue
         print(f"[{i}/{len(configs)}] {config.config_id}: training", flush=True)

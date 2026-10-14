@@ -962,8 +962,8 @@ If any gate fails, say which one and show the numbers; do not tune anything. The
 
 - Spec coverage:
   - Previous-day prices: Tasks 1 and 2.
-  - Charge carry-over and charge/days-left in the observation: Tasks 1 and 2.
-  - Penalty at episode end only: Task 2.
+  - Charge carry-over and charge level in the observation: Tasks 1 and 2.
+  - No charge penalty in multi-day markets: Task 2.
   - Daily demand redraw: Task 2.
   - Per-day metrics: Task 4.
   - Presets: Task 4.
