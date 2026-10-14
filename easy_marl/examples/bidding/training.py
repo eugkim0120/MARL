@@ -133,7 +133,7 @@ def make_competitive_params(N: int = 8, T: int = 24, competition_rate=2) -> Dict
     return params
 
 
-def make_default_params(N: int = 5, T: int = 24, day_ahead: bool = False) -> Dict:
+def make_default_params(N: int = 5, T: int = 24, day_ahead: bool = False, episode_days: int = 1) -> Dict:
     """
     Create default environment parameters.
 
@@ -141,6 +141,7 @@ def make_default_params(N: int = 5, T: int = 24, day_ahead: bool = False) -> Dic
         N: Number of generators
         T: Time horizon (number of timesteps)
         day_ahead: Every agent commits to all T hours at once (one step per day)
+        episode_days: Days per episode; above 1, battery charge and prices carry across days
 
     Returns:
         Dictionary of environment parameters
@@ -163,6 +164,7 @@ def make_default_params(N: int = 5, T: int = 24, day_ahead: bool = False) -> Dic
         "max_bid_delta": 50.0,
         "lambda_bid_penalty": 0.01,
         "day_ahead": day_ahead,
+        "episode_days": episode_days,
     }
     return params
 
@@ -176,16 +178,17 @@ def make_bess_params(
     initial_soc_frac: float = 0.5,
     bid_ref: float = 30.0,
     day_ahead: bool = False,
+    episode_days: int = 1,
 ) -> Dict:
     """
     Default market with N - 1 generators plus one battery as the last agent.
 
     Generators and demand are identical to ``make_default_params(N - 1)`` so a
     battery run can be compared directly against the no-battery baseline.
-    The battery starts each day half full and is charged for ending below that, so it
+    The battery starts each episode half full and is charged for ending the episode below that, so it
     can only profit by shifting energy between hours, not by selling its starting charge.
     """
-    params = make_default_params(N=N - 1, T=T, day_ahead=day_ahead)
+    params = make_default_params(N=N - 1, T=T, day_ahead=day_ahead, episode_days=episode_days)
     params["bess"] = {
         "power_mw": power_mw,
         "duration_h": duration_h,

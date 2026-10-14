@@ -9,11 +9,14 @@ import numpy as np
 import pytest
 import torch
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 
 from easy_marl.src.agents import PPOAgent
 from easy_marl.src.environment import MARLElectricityMarketEnv
 from easy_marl.examples.bidding.training import (
     init_agents,
+    make_bess_params,
+    make_default_params,
     parallel_train,
     set_all_seeds,
     train_single_agent_worker,
@@ -289,3 +292,32 @@ class TestParallelTrainFrozenAndInitialAgents:
     def test_that_frozen_index_out_of_range_is_rejected(self):
         with pytest.raises(ValueError, match="frozen_agents"):
             train_day_ahead(frozen_agents={DAY_N})
+
+
+def test_that_param_builders_pass_episode_days_through():
+    assert make_default_params(N=3, day_ahead=True)["episode_days"] == 1
+    assert make_default_params(N=3, day_ahead=True, episode_days=7)["episode_days"] == 7
+    assert make_bess_params(N=4, day_ahead=True, episode_days=7)["episode_days"] == 7
+
+
+def test_that_agents_built_for_multi_day_markets_have_the_wider_observations():
+    params = make_bess_params(N=4, T=24, day_ahead=True, episode_days=7)
+    agents = init_agents(4, params, seed=0)
+    assert agents[0].env.observation_space.shape == (50,)
+    assert agents[3].env.observation_space.shape == (52,)
+
+
+def test_that_parallel_training_runs_on_multi_day_episodes(tmp_path):
+    agents, info = parallel_train(
+        N=4,
+        num_rounds=1,
+        timesteps_per_agent=48,
+        seed=0,
+        save_dir=str(tmp_path),
+        verbose=False,
+        param_func=partial(make_bess_params, day_ahead=True, episode_days=3),
+        n_workers=1,
+        frozen_agents=(0, 1, 2),
+    )
+    assert info["frozen_agents"] == [0, 1, 2]
+    assert agents[3].env.observation_space.shape == (52,)
