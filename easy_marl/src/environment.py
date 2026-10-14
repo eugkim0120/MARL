@@ -81,6 +81,8 @@ class MARLElectricityMarketEnv(gym.Env):
             self.bess_leg_efficiency = float(np.sqrt(bess["efficiency_rt"]))
             self.bess_initial_soc = float(bess["initial_soc_frac"]) * self.bess_energy
             self.bess_bid_ref = float(bess["bid_ref"])
+            # Multi-day markets set the charge once here and never reset it, so no penalty is needed.
+            self.soc = self.bess_initial_soc
             self.K_all = np.append(self.K, self.bess_power).astype(np.float32)
             self.c_all = np.append(self.c, self.bess_bid_ref).astype(np.float32)
         else:
@@ -173,24 +175,29 @@ class MARLElectricityMarketEnv(gym.Env):
         if seed is not None:
             self.rng = np.random.default_rng(seed)
             self.run_stochastics()
+        elif self.multi_day:
+            # Single-day mode keeps one draw per seed so finished sweeps replay exactly.
+            self.run_stochastics()
 
         self.t = 0
         self.day = 0
 
+        hours = self.T * self.episode_days
         self.output = {
-            "bids": np.zeros((self.T, self.N), dtype=np.float32),
-            "q_offered": np.zeros((self.T, self.N), dtype=np.float32),
-            "q_cleared": np.zeros((self.T, self.N), dtype=np.float32),
-            "market_prices": np.zeros(self.T, dtype=np.float32),
-            "rewards": np.zeros((self.T, self.N), dtype=np.float32),
-            "penalty": np.zeros((self.T, self.N), dtype=np.float32),
-            "demand": np.zeros(self.T, dtype=np.float32),
+            "bids": np.zeros((hours, self.N), dtype=np.float32),
+            "q_offered": np.zeros((hours, self.N), dtype=np.float32),
+            "q_cleared": np.zeros((hours, self.N), dtype=np.float32),
+            "market_prices": np.zeros(hours, dtype=np.float32),
+            "rewards": np.zeros((hours, self.N), dtype=np.float32),
+            "penalty": np.zeros((hours, self.N), dtype=np.float32),
+            "demand": np.zeros(hours, dtype=np.float32),
         }
         if self.has_bess:
-            self.output["bess_charge"] = np.zeros(self.T, dtype=np.float32)
-            self.output["bess_discharge"] = np.zeros(self.T, dtype=np.float32)
-            self.output["soc"] = np.zeros(self.T, dtype=np.float32)
-            self.soc = self.bess_initial_soc
+            self.output["bess_charge"] = np.zeros(hours, dtype=np.float32)
+            self.output["bess_discharge"] = np.zeros(hours, dtype=np.float32)
+            self.output["soc"] = np.zeros(hours, dtype=np.float32)
+            if not self.multi_day:
+                self.soc = self.bess_initial_soc
             self.bess_buy_bid = 0.0
             self.bess_buy_quantity = 0.0
 
@@ -414,6 +421,13 @@ class MARLElectricityMarketEnv(gym.Env):
             day_reward += self._run_hour()
 
         self.t = self.T
+        if self.multi_day:
+            start = self.day * self.T
+            self.prev_prices = self.output["market_prices"][start : start + self.T].copy()
+        self.day += 1
+        if self.day < self.episode_days:
+            self.run_stochastics()
+            return self._get_obs(), day_reward[self.agent_index], False, False, {}
         return None, day_reward[self.agent_index], True, False, {}
 
     def _run_hour(self) -> np.ndarray:
@@ -421,6 +435,7 @@ class MARLElectricityMarketEnv(gym.Env):
 
         # Run market clearing
         demand = self.D_profile[self.t]
+        hour = self.day * self.T + self.t
         P_t, q_cleared, charged = self._clear_market(demand)
 
         # Rewards
@@ -447,23 +462,23 @@ class MARLElectricityMarketEnv(gym.Env):
                 - bid_penalties[self.bess_index]
                 - loss_of_load_penalty
             )
-            # Stops the battery from selling its starting energy for free.
-            if self.t == self.T - 1:
+            # Stops a single-day battery from selling its starting energy for free; multi-day markets never reset the charge, so they need no penalty.
+            if not self.multi_day and self.t == self.T - 1:
                 terminal_penalty = max(0.0, self.bess_initial_soc - self.soc) * (
                     self.bess_bid_ref + self.max_bid_delta
                 )
                 r[self.bess_index] -= terminal_penalty
-                self.output["penalty"][self.t, self.bess_index] = terminal_penalty
-            self.output["bess_charge"][self.t] = charged
-            self.output["bess_discharge"][self.t] = discharged
-            self.output["soc"][self.t] = self.soc
+                self.output["penalty"][hour, self.bess_index] = terminal_penalty
+            self.output["bess_charge"][hour] = charged
+            self.output["bess_discharge"][hour] = discharged
+            self.output["soc"][hour] = self.soc
 
         # Scale reward
         r /= self.demand_scale * self.cost_scale * max(1, self.T)
         r *= 20  # scale to reasonable range
 
         # Store outputs
-        t_idx = self.t
+        t_idx = hour
         self.output["bids"][t_idx] = self.b_all.copy()
         self.output["q_offered"][t_idx] = self.q_all.copy()
         self.output["q_cleared"][t_idx] = q_cleared

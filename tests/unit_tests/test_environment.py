@@ -430,3 +430,90 @@ class TestMARLEnvMultiDay:
         obs, _ = env.reset()
         assert obs.shape == (T_DAY + 2,)
         assert np.all(env.observation_space.low == 0)
+
+    def test_that_the_episode_ends_only_after_the_last_day(self):
+        env = make_multi_env(params=MULTI_PARAMS)
+        env.reset()
+        for day in range(DAYS):
+            obs, _, terminated, truncated, _ = env.step(None, fixed_evaluation=True)
+            assert terminated == (day == DAYS - 1) and not truncated
+            assert (obs is None) == terminated
+        assert env.output["market_prices"].shape == (DAYS * T_DAY,)
+        assert np.all(env.output["market_prices"] > 0)
+
+    def test_that_tomorrows_observation_shows_todays_prices(self):
+        env = make_multi_env(params=MULTI_PARAMS)
+        env.reset()
+        obs, _, _, _, _ = env.step(None, fixed_evaluation=True)
+        today = env.output["market_prices"][:T_DAY]
+        np.testing.assert_allclose(env.prev_prices, today)
+        np.testing.assert_allclose(obs[T_DAY + 2 :], today / env.cost_scale)
+
+    def test_that_charge_carries_over_to_the_next_day(self):
+        energy = BESS_POWER * BESS_DURATION
+        leg = np.sqrt(BESS_EFFICIENCY)
+        env = make_multi_env(FULL_CHARGE)
+        env.reset()
+        env.step(None, fixed_evaluation=True)
+        end_of_day_one = env.output["soc"][T_DAY - 1]
+        assert end_of_day_one > 0.5 * energy
+        env.step(None, fixed_evaluation=True)
+        # Day two starts from where day one ended, not from half full.
+        first_hour_day_two = env.output["soc"][T_DAY]
+        expected = min(end_of_day_one + env.output["bess_charge"][T_DAY] * leg, energy)
+        np.testing.assert_allclose(first_hour_day_two, expected, rtol=1e-5)
+
+    def test_that_the_battery_observation_shows_its_charge_each_day(self):
+        env = make_multi_env(FULL_CHARGE, agent_index=BESS_INDEX)
+        env.reset()
+        obs, _, _, _, _ = env.step(None, fixed_evaluation=True)
+        energy = BESS_POWER * BESS_DURATION
+        np.testing.assert_allclose(obs[2 * T_DAY + 3], env.output["soc"][T_DAY - 1] / energy, rtol=1e-6)
+
+    def test_that_multi_day_markets_never_charge_a_penalty(self):
+        env = make_multi_env(FULL_DISCHARGE)
+        run_fixed_episode(env)
+        soc0 = MULTI_BESS_PARAMS["bess"]["initial_soc_frac"] * BESS_POWER * BESS_DURATION
+
+        # The battery ends below where it started, which the single-day market would penalise.
+        assert env.output["soc"][-1] < soc0
+        assert np.all(env.output["penalty"] == 0)
+        # Its reward is its trading profit and nothing else.
+        hourly = env.output["market_prices"] * (env.output["bess_discharge"] - env.output["bess_charge"])
+        scale = 20 / (env.demand_scale * env.cost_scale * T_DAY)
+        np.testing.assert_allclose(env.output["rewards"][:, BESS_INDEX], hourly * scale, rtol=1e-5)
+
+    def test_that_charge_stays_within_limits_across_days(self):
+        energy = BESS_POWER * BESS_DURATION
+        for action in (FULL_CHARGE, FULL_DISCHARGE):
+            env = make_multi_env(action)
+            for _ in range(3):  # several episodes, so the charge also crosses episode boundaries
+                run_fixed_episode(env)
+                assert np.all(env.output["soc"] >= -1e-6)
+                assert np.all(env.output["soc"] <= energy + 1e-6)
+
+    def test_that_demand_is_redrawn_every_day_and_reproducible_by_seed(self):
+        def demands(seed):
+            env = make_multi_env(params=MULTI_PARAMS, seed=seed)
+            run_fixed_episode(env)
+            return env.output["demand"].reshape(DAYS, T_DAY)
+
+        first = demands(seed=3)
+        assert not np.allclose(first[0], first[1])
+        np.testing.assert_array_equal(first, demands(seed=3))
+
+    def test_that_reset_keeps_the_charge_and_prices_but_draws_new_demand(self):
+        env = make_multi_env(FULL_DISCHARGE, seed=3)
+        run_fixed_episode(env)
+        soc_at_end = env.soc
+        last_prices = env.output["market_prices"][-T_DAY:].copy()
+        last_demand = env.D_profile.copy()
+
+        obs, _ = env.reset()
+
+        assert env.day == 0
+        assert soc_at_end < env.bess_initial_soc
+        assert env.soc == soc_at_end
+        np.testing.assert_allclose(env.prev_prices, last_prices)
+        assert not np.allclose(env.D_profile, last_demand)
+        assert obs is not None
