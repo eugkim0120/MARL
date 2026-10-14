@@ -43,6 +43,13 @@ class MARLElectricityMarketEnv(gym.Env):
         self.lambda_bid_penalty = params.get("lambda_bid_penalty", 0.01)
         # Day-ahead: every agent commits to all T hours at once and one step is one day.
         self.day_ahead = bool(params.get("day_ahead", False))
+        # Multi-day episodes: battery charge carries across days and every agent sees yesterday's prices.
+        self.episode_days = int(params.get("episode_days", 1))
+        if self.episode_days < 1:
+            raise ValueError(f"episode_days must be at least 1, got {self.episode_days}.")
+        self.multi_day = self.episode_days > 1
+        if self.multi_day and not self.day_ahead:
+            raise ValueError("episode_days > 1 requires day_ahead=True.")
 
         # Demand & generator parameters
         self.D_profile = np.array(params["demand_profile"], dtype=np.float32)
@@ -86,6 +93,10 @@ class MARLElectricityMarketEnv(gym.Env):
             # Whole demand profile plus own capacity and cost (battery: power, energy, reference price).
             self.obs_dim = self.T + 2
             bess_obs_dim = self.T + 3
+            if self.multi_day:
+                # Yesterday's T prices for everyone; the battery also sees its charge.
+                self.obs_dim += self.T
+                bess_obs_dim += self.T + 1
         else:
             self.obs_dim = obs_dim_fn(self.N_generators)
             # Battery sees the market features plus its state of charge.
@@ -99,7 +110,10 @@ class MARLElectricityMarketEnv(gym.Env):
         is_bess_agent = self.has_bess and self.agent_index == self.bess_index
         own_obs_dim = len(self.bess_obs_buf) if is_bess_agent else self.obs_dim
         self.observation_space = spaces.Box(
-            low=0, high=np.inf, shape=(own_obs_dim,), dtype=np.float32
+            low=-np.inf if self.multi_day else 0,
+            high=np.inf,
+            shape=(own_obs_dim,),
+            dtype=np.float32,
         )
 
         # Action space; the battery's first component is signed (<0 charge, >0 discharge)
@@ -132,6 +146,7 @@ class MARLElectricityMarketEnv(gym.Env):
         self.other_action_fns: Dict[int, Callable] = {}
 
         # outputs / internal state
+        self.prev_prices = None
         self.reset(seed=seed)
 
     def run_stochastics(self) -> None:
@@ -160,6 +175,7 @@ class MARLElectricityMarketEnv(gym.Env):
             self.run_stochastics()
 
         self.t = 0
+        self.day = 0
 
         self.output = {
             "bids": np.zeros((self.T, self.N), dtype=np.float32),
@@ -181,7 +197,18 @@ class MARLElectricityMarketEnv(gym.Env):
         self.b_all = np.zeros(self.N, dtype=np.float32)
         self.q_all = np.zeros(self.N, dtype=np.float32)
 
+        # Only the first day after construction has no real yesterday; later resets keep the last day's prices.
+        if self.multi_day and self.prev_prices is None:
+            self.prev_prices = self._at_cost_prices()
+
         return self._get_obs(), {}
+
+    def _at_cost_prices(self) -> np.ndarray:
+        """Hourly prices if every generator offered full capacity at cost; stands in for yesterday on day one."""
+        return np.array(
+            [market_clearing(self.c, self.K, demand)[0] for demand in self.D_profile],
+            dtype=np.float32,
+        )
 
     def _get_obs(self, agent_index: Optional[int] = None) -> np.ndarray:
         """Return the normalized observation vector for ``agent_index``."""
@@ -226,16 +253,24 @@ class MARLElectricityMarketEnv(gym.Env):
         """Day-ahead observation: the whole demand profile plus the agent's own static features."""
 
         T = self.T
-        if self.has_bess and agent_index == self.bess_index:
+        is_bess = self.has_bess and agent_index == self.bess_index
+        if is_bess:
             buf = self.bess_obs_buf
             buf[T] = self.bess_power / self.capacity_scale
             buf[T + 1] = self.bess_energy / (self.capacity_scale * T)
             buf[T + 2] = self.bess_bid_ref / self.cost_scale
+            n_static = 3
         else:
             buf = self.obs_buf
             buf[T] = self.K[agent_index] / self.capacity_scale
             buf[T + 1] = self.c[agent_index] / self.cost_scale
+            n_static = 2
         buf[:T] = self.D_profile / self.demand_scale
+        if self.multi_day:
+            start = T + n_static
+            buf[start : start + T] = self.prev_prices / self.cost_scale
+            if is_bess:
+                buf[start + T] = self.soc / self.bess_energy
         return buf
 
     def _as_schedule(self, action, agent_index: int) -> np.ndarray:
@@ -463,6 +498,7 @@ class MARLElectricityMarketEnv(gym.Env):
             "max_bid_delta": self.max_bid_delta,
             "lambda_bid_penalty": self.lambda_bid_penalty,
             "day_ahead": self.day_ahead,
+            "episode_days": self.episode_days,
         }
         if self.has_bess:
             metadata["bess"] = {

@@ -361,3 +361,72 @@ class TestMARLEnvDayAhead:
         assert obs.shape == env.observation_space.shape
         assert env.action_space.low[0] == -1.0
         assert env.action_space.shape == (2 * T_DAY,)
+
+
+# --- Multi-day episodes: charge carries over and agents see yesterday's prices ---
+DAYS = 3
+MULTI_PARAMS = {**DAY_PARAMS, "episode_days": DAYS}
+MULTI_BESS_PARAMS = {**DAY_BESS_PARAMS, "episode_days": DAYS}
+
+
+def make_multi_env(battery_action=None, agent_index=0, params=MULTI_BESS_PARAMS, seed=None):
+    agents = [MockAgent(GENERATOR_NULL) for _ in range(3)]
+    if "bess" in params:
+        agents.append(MockAgent(battery_action if battery_action is not None else IDLE))
+    return MARLElectricityMarketEnv(
+        agents=agents, params=params, agent_index=agent_index, seed=seed
+    )
+
+
+class TestMARLEnvMultiDay:
+    def test_that_multi_day_needs_day_ahead_mode(self):
+        hourly = {k: v for k, v in MULTI_PARAMS.items() if k != "day_ahead"}
+        try:
+            MARLElectricityMarketEnv(agents=[MockAgent(GENERATOR_NULL)] * 3, params=hourly)
+        except ValueError as error:
+            assert "day_ahead" in str(error)
+        else:
+            raise AssertionError("expected ValueError for episode_days without day_ahead")
+
+    def test_that_episode_days_below_one_is_rejected(self):
+        try:
+            MARLElectricityMarketEnv(
+                agents=[MockAgent(GENERATOR_NULL)] * 3, params={**DAY_PARAMS, "episode_days": 0}
+            )
+        except ValueError as error:
+            assert "episode_days" in str(error)
+        else:
+            raise AssertionError("expected ValueError for episode_days=0")
+
+    def test_that_generators_see_demand_own_features_and_yesterdays_prices(self):
+        env = make_multi_env(params=MULTI_PARAMS)
+        obs, _ = env.reset()
+
+        assert obs.shape == (2 * T_DAY + 2,) == env.observation_space.shape
+        # Multi-day mode adds daily noise, so demand is no longer exactly the flat profile.
+        np.testing.assert_allclose(obs[:T_DAY], env.D_profile / env.demand_scale)
+        np.testing.assert_allclose(obs[T_DAY + 2 :], env.prev_prices / env.cost_scale)
+
+    def test_that_battery_also_sees_its_charge(self):
+        env = make_multi_env(agent_index=BESS_INDEX)
+        obs, _ = env.reset()
+
+        assert obs.shape == (2 * T_DAY + 4,) == env.observation_space.shape
+        np.testing.assert_allclose(obs[T_DAY + 3 : 2 * T_DAY + 3], env.prev_prices / env.cost_scale)
+        assert obs[2 * T_DAY + 3] == 0.5  # starts half full
+
+    def test_that_first_day_prices_are_the_at_cost_clearing_of_that_days_demand(self):
+        env = make_multi_env(params=MULTI_PARAMS)
+        env.reset()
+        # Demand 60 against 50 MW blocks costing 10, 20, 30: the second block sets the price.
+        np.testing.assert_allclose(env.prev_prices, 20.0)
+
+    def test_that_multi_day_observation_space_allows_negative_prices(self):
+        env = make_multi_env(params=MULTI_PARAMS)
+        assert np.all(env.observation_space.low == -np.inf)
+
+    def test_that_single_day_observations_are_unchanged(self):
+        env = make_day_env()
+        obs, _ = env.reset()
+        assert obs.shape == (T_DAY + 2,)
+        assert np.all(env.observation_space.low == 0)
