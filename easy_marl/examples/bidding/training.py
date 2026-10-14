@@ -87,8 +87,8 @@ def set_all_seeds(seed: int):
 ppo_params = {
     "learning_rate": 3e-4,
     "gamma": 0.99,
-    "n_steps": 24,  # Match episode length for stable updates, this is good as our environment is deterministic over episodes
-    "batch_size": 24,  # Match episode length for stable updates, this is good as our environment is deterministic over episodes
+    "n_steps": 24,  # Rollout length in env steps; day-ahead steps are whole days. 256 collapsed a battery to idle in probes.
+    "batch_size": 24,
     "hidden_sizes": (32, 32, 32, 32),  # default is (64, 64)
     "ent_coef": 0.01,
 }

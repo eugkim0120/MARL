@@ -18,7 +18,7 @@ Snapshot of work done outside the package so a fresh (cloud) session can continu
 
 1. Run a CMA-ES open-loop benchmark on all 200 batteries (about 25 min on 8 cores). Today only 4 cases are benchmarked (74/84/89/97% of the best schedule).
 2. Whether to compute a Nash benchmark for the generators. Today only the at-cost price is used as a reference; generators learned prices of about 2.1x that.
-3. SoC carry-over redesign: the battery resets to 50% SoC every day and pays a terminal penalty (80/MWh below 50%). The user questioned this. Proposal: multi-day episodes (for example 7 days), SoC in the observation, penalty only at episode end. No code written.
+3. SoC carry-over: implemented on branch `feat/multi-day-episodes` as `params["episode_days"]` (presets `smoke_carryover`, `full_carryover`, 7 days). Agents see the previous day's prices; the battery also sees its charge; the charge is never reset, so there is no penalty; evaluation discards one warm-up episode; demand noise is redrawn daily. The full sweep has not been run.
 4. Scenario realism ladder S0-S4 (see `pages/bess_sim_map.html`): S1 SoC carry-over plus wear cost, S2 weekly load shape, S3 solar with weather draw, S4 adaptive generators. The user has not picked a direction.
 5. Keep the best round's policy rather than the last: all battery sizes score lower in round 5 than in round 4.
 
@@ -43,3 +43,4 @@ The `MIN_USEFUL_CYCLES = 0.6` flag in `bess_experiment.py` is a misleading diagn
 
 - Use `.venv/bin/python`; `python` and `python3` are not on PATH on the original host.
 - Push to `origin` (eugkim0120/MARL) only, never `upstream` (wd7512/MARL).
+- In single-day mode, demand noise is drawn once per environment seed, so every day inside one training call has identical demand. Multi-day mode redraws it daily. Single-day mode was left as is so `results/bess_full` still replays.
