@@ -9,11 +9,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from easy_marl.src.agents import SimpleAgent
+from easy_marl.src.agents import PPOAgent, SimpleAgent
 from easy_marl.src.environment import MARLElectricityMarketEnv
 from easy_marl.examples.bidding import bess_experiment
 from easy_marl.examples.bidding.bess_experiment import (
     CSV_METRICS,
+    PRESETS,
     SweepConfig,
     aggregate,
     bootstrap_ci,
@@ -557,3 +558,90 @@ class TestReplayDispatch:
 
         with pytest.raises(FileNotFoundError, match="agent_3"):
             replay_dispatch(tmp_path)
+
+
+class TestMultiDaySweep:
+    def test_that_carryover_presets_run_seven_day_episodes(self):
+        assert PRESETS["smoke_carryover"]["episode_days"] == 7
+        assert PRESETS["full_carryover"]["episode_days"] == 7
+        assert "episode_days" not in PRESETS["full"]
+
+    def test_that_configs_build_multi_day_markets_without_changing_their_ids(self):
+        config = SweepConfig(50, 4, 42, episode_days=7)
+        assert config.config_id == "p50_d4_s42"
+        assert config.param_func()(N=4, T=24)["episode_days"] == 7
+        baseline = SweepConfig(None, None, 42, episode_days=7)
+        assert baseline.param_func()(N=3, T=24)["episode_days"] == 7
+
+    def test_that_build_configs_passes_episode_days_to_every_config(self):
+        configs = build_configs([10], [1], [42], episode_days=7)
+        assert {c.episode_days for c in configs} == {7}
+
+    def test_that_old_stored_configs_without_episode_days_still_load(self):
+        stored = {"power_mw": 10, "duration_h": 1, "seed": 42, "arm": "frozen"}
+        assert SweepConfig(**stored).episode_days == 1
+
+    def test_that_multi_day_dispatch_is_split_into_days(self):
+        params = make_bess_params(N=4, T=24, day_ahead=True, episode_days=3)
+        agents = init_agents(4, params, seed=0)
+        dispatch = simulate_episodes(agents, params, num_episodes=2, seed=10_000)
+        assert dispatch["market_prices"].shape == (6, 24)
+        assert dispatch["q_cleared"].shape == (6, 24, 4)
+        assert dispatch["soc"].shape == (6, 24)
+
+    def test_that_the_warm_up_episode_spends_the_free_starting_charge(self):
+        class Fixed:
+            def __init__(self, action):
+                self.action = np.asarray(action, dtype=np.float32)
+
+            def fixed_act_function(self, deterministic=True):
+                return lambda obs: self.action
+
+        # A battery that always sells empties its free 50 MWh within the warm-up episode,
+        # so nothing it sells can show up in the recorded days.
+        params = make_bess_params(N=4, T=24, power_mw=25, duration_h=4, day_ahead=True, episode_days=3)
+        agents = [Fixed([0.0, 0.0]) for _ in range(3)] + [Fixed([1.0, -10.0])]
+        dispatch = simulate_episodes(agents, params, num_episodes=2, seed=10_000)
+        assert dispatch["soc"].max() < 1e-6
+        assert dispatch["bess_discharge"].sum() == 0
+
+    def test_that_single_day_dispatch_shape_is_unchanged(self):
+        params = make_default_params(N=3, T=24, day_ahead=True)
+        agents = init_agents(3, params, seed=0)
+        dispatch = simulate_episodes(agents, params, num_episodes=2, seed=10_000)
+        assert dispatch["market_prices"].shape == (2, 24)
+
+    def test_that_single_day_generators_cannot_load_into_a_multi_day_market(self):
+        single = make_default_params(N=3, T=24, day_ahead=True)
+        multi = make_default_params(N=3, T=24, day_ahead=True, episode_days=7)
+        saved = init_agents(3, single, seed=0)[0].save_to_bytes()
+        env = MARLElectricityMarketEnv(agents=[], params=multi, seed=0, agent_index=0)
+        try:
+            PPOAgent.from_bytes(saved, env)
+        except ValueError as error:
+            assert "bservation" in str(error)
+        else:
+            raise AssertionError("a 26-number policy loaded into a 50-number market")
+
+    def test_that_the_report_says_when_episodes_span_several_days(self, tmp_path):
+        for seed in (1, 2):
+            pre = tmp_path / "pretrain" / f"s{seed}"
+            pre.mkdir(parents=True)
+            (pre / "convergence.json").write_text(
+                json.dumps({"policy_change_per_round": [0.2, 0.01], "converged": True})
+            )
+            for power, duration in ((None, None), (10, 1)):
+                cfg = SweepConfig(power, duration, seed, episode_days=7)
+                metrics = {k: 1.0 for k in CSV_METRICS}
+                metrics["mean_hourly_price"] = [1.0] * 4
+                if power is None:
+                    for k in CSV_METRICS:
+                        if k.startswith("bess_"):
+                            metrics[k] = None
+                (tmp_path / cfg.config_id).mkdir()
+                (tmp_path / cfg.config_id / "metrics.json").write_text(
+                    json.dumps({"config": asdict(cfg), "metrics": metrics})
+                )
+
+        report = aggregate(tmp_path).read_text()
+        assert "Days run continuously in 7-day episodes" in report

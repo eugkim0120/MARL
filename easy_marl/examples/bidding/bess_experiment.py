@@ -76,6 +76,9 @@ PRESETS = {
         "update_probability": 1.0,
     },
 }
+# Seven-day episodes: battery charge and yesterday's prices carry across days.
+PRESETS["smoke_carryover"] = {**PRESETS["smoke"], "episode_days": 7}
+PRESETS["full_carryover"] = {**PRESETS["full"], "episode_days": 7}
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,7 @@ class SweepConfig:
     duration_h: Optional[float]
     seed: int
     arm: str = "frozen"
+    episode_days: int = 1
 
     def __post_init__(self):
         if self.arm not in ARMS:
@@ -108,24 +112,35 @@ class SweepConfig:
     def param_func(self):
         # Every agent, baseline generators included, commits to a full day at once.
         if self.is_baseline:
-            return partial(make_default_params, day_ahead=True)
+            return partial(make_default_params, day_ahead=True, episode_days=self.episode_days)
         return partial(
             make_bess_params,
             power_mw=self.power_mw,
             duration_h=self.duration_h,
             day_ahead=True,
+            episode_days=self.episode_days,
         )
 
 
-def build_configs(powers, durations, seeds, arms=("frozen",)) -> List[SweepConfig]:
+def build_configs(powers, durations, seeds, arms=("frozen",), episode_days=1) -> List[SweepConfig]:
     configs = []
     for seed in seeds:
         for arm in arms:
-            configs.append(SweepConfig(None, None, seed, arm))
+            configs.append(SweepConfig(None, None, seed, arm, episode_days))
             for power in powers:
                 for duration in durations:
-                    configs.append(SweepConfig(power, duration, seed, arm))
+                    configs.append(SweepConfig(power, duration, seed, arm, episode_days))
     return configs
+
+
+def _play_episode(env: MARLElectricityMarketEnv) -> Dict[str, np.ndarray]:
+    """Reset, play one episode with every agent on its fixed policy, and return its output."""
+    env.reset()
+    done = False
+    while not done:
+        _, _, terminated, truncated, _ = env.step(None, fixed_evaluation=True)
+        done = terminated or truncated
+    return env.output
 
 
 def simulate_episodes(
@@ -137,31 +152,40 @@ def simulate_episodes(
 ) -> Dict[str, np.ndarray]:
     """Run frozen agents over seeded demand episodes and record the full dispatch.
 
-    Every array is float32 with the episode first: prices and demand are (episode, hour),
-    per-agent arrays are (episode, hour, agent), and the battery arrays exist only when
-    the market has a battery.
+    Every array is float32 with the day first: prices and demand are (day, hour), per-agent
+    arrays are (day, hour, agent), multi-day episodes are split into their days, and the
+    battery arrays exist only when the market has a battery. Multi-day markets are simulated
+    as one continuous run after an unrecorded warm-up episode.
     """
-    episodes: List[Dict[str, np.ndarray]] = []
-    for ep in range(num_episodes):
+    # Presets and params stored before multi-day episodes have no key; they ran single days.
+    if params.get("episode_days", 1) > 1:
+        # One continuous market: charge and prices carry from episode to episode. The unrecorded
+        # warm-up episode spends the free starting charge and replaces the at-cost first-day prices.
         env = MARLElectricityMarketEnv(
-            agents=agents,
-            params=params,
-            seed=None if seed is None else seed + ep,
-            observer_name=observer_name,
+            agents=agents, params=params, seed=seed, observer_name=observer_name
         )
-        env.reset()
-        done = False
-        while not done:
-            _, _, terminated, truncated, _ = env.step(None, fixed_evaluation=True)
-            done = terminated or truncated
-        episodes.append(env.output)
+        _play_episode(env)
+        episodes = [_play_episode(env) for _ in range(num_episodes)]
+    else:
+        episodes = []
+        for ep in range(num_episodes):
+            env = MARLElectricityMarketEnv(
+                agents=agents,
+                params=params,
+                seed=None if seed is None else seed + ep,
+                observer_name=observer_name,
+            )
+            episodes.append(_play_episode(env))
 
     keys = ["market_prices", "demand", "bids", "q_offered", "q_cleared", "rewards"]
     if env.has_bess:
         keys += ["bess_charge", "bess_discharge", "soc"]
-    dispatch = {
-        key: np.stack([out[key] for out in episodes]).astype(np.float32) for key in keys
-    }
+    days = env.episode_days
+    dispatch = {}
+    for key in keys:
+        stacked = np.stack([out[key] for out in episodes]).astype(np.float32)
+        # Split multi-day episodes into days so every metric stays per day.
+        dispatch[key] = stacked.reshape(num_episodes * days, env.T, *stacked.shape[2:])
     dispatch["generator_cost"] = np.asarray(env.c, dtype=np.float32)
     dispatch["generator_capacity"] = np.asarray(env.K, dtype=np.float32)
     return dispatch
@@ -295,7 +319,11 @@ def get_pretrained(seed: int, preset: Dict, out_dir) -> List[PPOAgent]:
             f"pretrain_rounds must be at least 2 to measure convergence, got {rounds}."
         )
     directory = pretrain_dir(out_dir, seed)
-    params = make_default_params(N=N_GENERATORS, T=HOURS, day_ahead=True)
+    # Presets stored before multi-day episodes have no key; they ran single days.
+    episode_days = preset.get("episode_days", 1)
+    params = make_default_params(
+        N=N_GENERATORS, T=HOURS, day_ahead=True, episode_days=episode_days
+    )
 
     if not (directory / "convergence.json").exists():
         agents, _ = parallel_train(
@@ -305,7 +333,7 @@ def get_pretrained(seed: int, preset: Dict, out_dir) -> List[PPOAgent]:
             seed=seed,
             save_dir=str(directory / "training"),
             verbose=False,
-            param_func=partial(make_default_params, day_ahead=True),
+            param_func=partial(make_default_params, day_ahead=True, episode_days=episode_days),
             update_probability=preset["update_probability"],
         )
         for i, agent in enumerate(agents):
@@ -770,6 +798,7 @@ def write_report(
     effects_clean: List[Dict],
     convergence: Dict[int, Dict],
 ) -> Path:
+    episode_days = {r.get("episode_days", 1) for r in rows}
     rows = relative_rows(rows)
     lines = [
         "# BESS sweep results",
@@ -780,6 +809,15 @@ def write_report(
         "Absolute values stay in results.csv and paired_effects.csv.",
         "",
     ]
+    if episode_days != {1}:
+        lines += [
+            f"Days run continuously in {max(episode_days)}-day episodes. Battery charge is never "
+            "reset and carries no penalty, and every agent sees the previous day's prices. Frozen "
+            "generators therefore react to the battery's effect on yesterday's prices, so paired "
+            "effects include that immediate response. Evaluation discards one warm-up episode. "
+            "Metrics are per day.",
+            "",
+        ]
 
     if convergence:
         lines += [
@@ -897,7 +935,12 @@ def main():
             preset[key] = getattr(args, key)
     out_dir = Path(args.out or os.path.join("outputs", "bess_sweep", args.preset))
     configs = build_configs(
-        preset["powers"], preset["durations"], preset["seeds"], preset["arms"]
+        preset["powers"],
+        preset["durations"],
+        preset["seeds"],
+        preset["arms"],
+        # Presets stored before multi-day episodes have no key; they ran single days.
+        episode_days=preset.get("episode_days", 1),
     )
     run_sweep(configs, preset, out_dir)
     print(f"Report: {aggregate(out_dir)}")
