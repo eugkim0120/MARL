@@ -185,8 +185,9 @@ def make_bess_params(
 
     Generators and demand are identical to ``make_default_params(N - 1)`` so a
     battery run can be compared directly against the no-battery baseline.
-    The battery starts each episode half full and is charged for ending the episode below that, so it
-    can only profit by shifting energy between hours, not by selling its starting charge.
+    The battery starts half full. In single-day markets it is charged for ending the day below that, so it
+    can only profit by shifting energy between hours, not by selling its starting charge; multi-day markets
+    never reset its charge, so they need no penalty.
     """
     params = make_default_params(N=N - 1, T=T, day_ahead=day_ahead, episode_days=episode_days)
     params["bess"] = {
