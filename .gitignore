@@ -65,3 +65,5 @@ logs/
 # RL / PPO outputs
 outputs/
 outputs/**
+# Agent worktrees
+.claude/worktrees/
